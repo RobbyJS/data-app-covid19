@@ -1,0 +1,314 @@
+#%%
+import pandas as pd
+import streamlit as st
+import altair as alt
+from math import ceil, floor, log10
+
+from altair import datum
+from typing import Tuple
+
+URL_OPENCOVID19 = "https://raw.githubusercontent.com/victorvicpal/COVID19_es/master/data/final_data/dataCOVID19_es.csv"
+url_pop_ccaa = "https://raw.githubusercontent.com/victorvicpal/COVID19_es/master/data/info_data/Poblaci%C3%B3nCCAA.csv"
+
+
+# make title
+st.title("DataViz App Covid-19 🦠")
+
+
+#%% Truncate function
+def truncate_10(n,up_down):
+    temp = floor(log10(n))
+    if up_down == "up":
+        round_op = lambda x: ceil(x)
+    else:
+        round_op = lambda x: floor(x)
+
+    return float(round_op(n/10**temp)*(10**temp))
+#%%
+@st.cache
+def get_data(url) -> Tuple[pd.DataFrame]:
+    """
+    1 - Get data from opencovid19 repository
+    2 - Transform raw data into dataframe
+    3 - Returns df_covid19_fr (columns = ['date', 'type', 'nombre']) and
+                df_covid19_region (columns = ['date', 'maille_nom', 'cas_confirmes', 'deces', 'delta_deces',
+                                              'delta_cas_confirmes', 'fatality_rate', 'days_after_5_deaths',
+                                               'days_after_50_confirmed']) 
+    """
+    # 1 - Get data
+    data = pd.read_csv(url)
+    #data = pd.read_csv(url)
+    df_covid19_region = data
+    
+    df_covid19_region = df_covid19_region.sort_values(by=["CCAA", "fecha"])
+    # create a new index based from day after 5 deaths
+    df_covid19_region["days_after_5_deaths"] = (
+        df_covid19_region[df_covid19_region.muertes > 5]
+        .groupby("CCAA")["muertes"]
+        .rank(method="first", ascending=True)
+    )
+    # create a new index based from day after 50 confirmed
+    df_covid19_region["days_after_50_confirmed"] = (
+        df_covid19_region[df_covid19_region.casos > 50]
+        .groupby("CCAA")["casos"]
+        .rank(method="first", ascending=True)
+    )
+    df_covid19_region = df_covid19_region.fillna(value=0)
+
+
+    return df_covid19_region
+
+#%%
+df_covid19_region = get_data(URL_OPENCOVID19)
+df_regions = pd.read_csv(url_pop_ccaa)
+#print(df_covid19_es.head())
+#print(df_covid19_region.head())
+#print(df_regions)
+
+#%% create necessary variables
+
+# Change dates to correct format
+# dates = pd.DataFrame(df_covid19_region['fecha'])
+# df_Madrid = df_covid19_region[df_covid19_region["CCAA"].isin(["Madrid"])]
+# dates = pd.to_datetime(df_Madrid.iloc[:,
+#     df_covid19_region.columns.get_loc('fecha')],format="%Y/%m/%d")
+
+# Parece que no puedo convertir la fecha a datetime porque tengo fechas repetidas. o eso entiendo
+# pippo = pd.to_datetime(df_covid19_region["fecha"],format="%Y/%m/%d")
+# add population information
+df_covid19_region = df_covid19_region.merge(df_regions,on='CCAA',how='inner')
+#col_idx = [1,2]+list(range(4,9))
+
+
+col_idx = list(range(0,df_covid19_region.shape[1]))
+df_covid19_es = df_covid19_region.iloc[:,col_idx].groupby(['fecha'],as_index=False).sum()
+# create a new index based from day after 5 deaths
+df_covid19_es["days_after_5_deaths"] = (
+    df_covid19_es[df_covid19_es.muertes > 5]
+    ["muertes"]
+    .rank(method="first", ascending=True)
+)
+# create a new index based from day after 50 confirmed
+df_covid19_es["days_after_50_confirmed"] = (
+    df_covid19_es[df_covid19_es.casos > 50]
+    ["casos"]
+    .rank(method="first", ascending=True)
+)
+df_covid19_es['CCAA'] = 'Total_pais'
+df_covid19_es = df_covid19_es.fillna(value=0)
+
+df_covid19_region = df_covid19_region.append(df_covid19_es)
+
+df_covid19_region["dead_ratio"] = df_covid19_region["muertes"]/df_covid19_region["Población"]*1000
+df_covid19_region["cases_ratio"] = df_covid19_region["casos"]/df_covid19_region["Población"]*1000
+df_covid19_region["new_cases_ratio"] = df_covid19_region["nuevos"]/df_covid19_region["Población"]*1000
+
+df_covid19_region["fecha_D"] = pd.to_datetime(df_covid19_region["fecha"],format="%Y/%m/%d")
+
+regions = list(df_covid19_region.CCAA.unique())
+x_date_var = "fecha_D"
+
+
+#%% Streamlit inputs %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+################################################################################################
+viz_option = st.sidebar.selectbox("Visualisation: ", ("cumulative", "day delta", "histo"))
+
+multiselection = st.sidebar.multiselect(
+    "Choose the regions:", regions, default=regions
+)
+
+
+#%% get df_covid19_region based on region in multiselection
+# unit_testing variables
+# multiselection = regions
+# viz_option = "graph"
+# scale = "linear"
+
+# code
+df_covid19_region = df_covid19_region[
+    df_covid19_region["CCAA"].isin(multiselection)
+].sort_values(by=["CCAA", "fecha"], ascending=[True, False])
+
+# intentar pintarlo awquí fuera
+# comparar mis datos con los originales
+# ver si el script original funciona en interactivo
+
+# c_deaths = (
+#     alt.Chart(df_covid19_es).
+#     mark_line(point=True).
+#     encode(
+#             x="days_after_5_deaths",
+#             y="muertes",
+#         ).interactive()
+# )
+
+st.sidebar.info(
+    "Thanks to Tlse Data Engineering for the [original project](https://github.com/TlseDataEngineering/data-app-covid19)."
+)
+
+if viz_option == "cumulative":
+   
+    if st.checkbox("Relative x-axis"):
+        x_var = ["days_after_50_confirmed","days_after_5_deaths"]
+    else:
+        x_var = [x_date_var,x_date_var]
+    
+    if st.checkbox("Numbers relative to population"):
+        y_var = ["cases_ratio","dead_ratio"]
+    else:
+        y_var = ["casos","muertes"]        
+    
+    if st.checkbox("Log Scale"):
+        max_log_cases = [truncate_10(df_covid19_region[y_var[0]].max(),"up"),
+         truncate_10(df_covid19_region[y_var[1]].max(),"up")]
+        min_log_cases = (
+            [truncate_10(
+                df_covid19_region[df_covid19_region[y_var[0]]>0][y_var[0]].min(),"down"),
+         truncate_10(
+                df_covid19_region[df_covid19_region[y_var[1]]>0][y_var[1]].min(),"down")])
+        scale_t = "log"
+    else:
+        scale = alt.Scale(type="linear")
+        scale_t = "linear"        
+    #print("I\'m in")
+    #st.info("""I'm in""")
+    # make plot on nb of diagnosed by regions    
+    if scale_t == "log":
+        scale = alt.Scale(type="log", domain=[min_log_cases[0], max_log_cases[0]], clamp=True)
+    c_diagnosed = (
+        alt.Chart(df_covid19_region)
+        .mark_line(point=True)
+        .encode(
+            alt.X(x_var[0]),
+            alt.Y(y_var[0], scale=scale),
+            alt.Color("CCAA"),
+            tooltip=[x_var[0], y_var[0], "CCAA"],
+        )
+        .interactive()
+    )    
+    # make plot on nb of deces by regions
+    if scale_t == "log":
+        scale = alt.Scale(type="log", domain=[min_log_cases[1], max_log_cases[1]], clamp=True)
+    c_deaths = (
+        alt.Chart(df_covid19_region)
+        .mark_line(point=True)
+        .encode(
+            alt.X(x_var[1]),
+            alt.Y(y_var[1], scale=scale),
+            alt.Color("CCAA"),
+            tooltip=[x_var[1], y_var[1], "CCAA"],
+        )
+        .interactive()
+    )      
+
+    st.altair_chart(c_diagnosed, use_container_width=True)
+    st.altair_chart(c_deaths, use_container_width=True)
+
+elif viz_option=="day delta":
+    if st.checkbox("Relative x-axis"):
+        x_var = ["days_after_50_confirmed","days_after_5_deaths"]
+    else:
+        x_var = [x_date_var,x_date_var]
+    
+    if st.checkbox("Numbers relative to population"):
+        y_var = ["new_cases_ratio","dead_ratio"]
+    else:
+        y_var = ["nuevos","muertes"]   
+    c_heatmap_confirmed = (
+        alt.Chart(df_covid19_region)
+        .mark_rect()
+        .encode(
+            alt.X(x_var[0]),
+            alt.Y("CCAA:N"),
+            alt.Color(y_var[0]+":Q", scale=alt.Scale(scheme="viridis")),
+            tooltip=[x_var[0], "CCAA", y_var[0]],
+        )
+        .transform_filter((datum.nuevos >= 0))
+        .interactive()
+    )
+    c_histog_new = (
+        alt.Chart(df_covid19_region)
+        .mark_bar()#width)
+        .encode(
+            alt.X(x_var[0]+":Q"),#type="temporal",timeUnit="day"),Esto funciona pero me pinta solo una semana
+            alt.Y(y_var[0]+":Q"),            
+            tooltip=[x_var[0], y_var[0]],
+        )
+        .properties(height=200)
+        .facet(row='CCAA:N')
+        .interactive()
+    )
+    c_area_new = (
+        alt.Chart(df_covid19_region)
+        .mark_area()#width)
+        .encode(
+            alt.X(x_var[0]),
+            alt.Y(y_var[0]+":Q"),            
+            tooltip=[x_var[0], y_var[0]],
+        ).properties(height=200)
+        .facet(row='CCAA:N')
+        .interactive()
+    )    
+    
+    st.altair_chart(c_heatmap_confirmed, use_container_width=True)
+    st.altair_chart(c_histog_new, use_container_width=True)
+    st.altair_chart(c_area_new, use_container_width=True)
+
+    st.info("""Aquí me gustaría probar los ridgelines. Quizás lo que más me guste es lollypop""")
+
+elif viz_option=="histo":
+    st.info("""En alguna parte podría pintar unas barras rellenas. Total de casos rellenos con el 
+    porcentaje de curados, hospitalizados, UCI, muertos. O barras superpuestas unas sobre otras con
+    transparencia""")
+
+st.info(
+    """ by: [R. Jimenez Sanchez](https://www.linkedin.com/in/robertojimenezsanchez/) | source: [GitHub](https://www.github.com)
+        | data source: [victorvicpal/COVID19_es (GitHub)](https://raw.githubusercontent.com/victorvicpal/COVID19_es/master/data/final_data/dataCOVID19_es.csv). """
+)
+
+# %% graphs testing
+
+df_covid19_temp = df_covid19_region[df_covid19_region["CCAA"]=="Total_pais"]
+df_covid19_temp
+base2 = (
+    alt.Chart(df_covid19_temp).transform_fold(
+    ['muertes', 'curados'],
+).mark_area(opacity=0.3).encode(
+        alt.Y('value:Q',stack=True),        
+        alt.Color('key:N', scale=alt.Scale(scheme='set1')),#color='key:N',scheme=['#de3907','#5cc481']        
+        x='fecha_D',
+))
+base2
+#%%
+base1 = (
+    alt.Chart(df_covid19_temp).mark_line().encode(
+        alt.Y('casos:Q'),    
+        x='fecha_D',
+        color=alt.value('yellow'),
+))
+base1
+
+# %%
+alt.layer(  
+  base1,
+  base2,
+)
+
+# %%
+base = alt.Chart(df_covid19_region).encode(
+    alt.X('fecha_D',type='temporal'),
+    y="nuevos:Q",
+    color=alt.value('black'),
+).properties(
+    height=200
+)
+(alt.layer(  
+  base.mark_point(),
+  base.mark_rule()
+).facet(
+    row='CCAA:N',
+    #column='CCAA:N',
+)
+ .interactive())
+
+# %%
