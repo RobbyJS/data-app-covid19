@@ -1,3 +1,4 @@
+#%% 
 import pandas as pd
 import streamlit as st
 import altair as alt
@@ -11,7 +12,7 @@ URL_OPENCOVID19 = "https://raw.githubusercontent.com/opencovid19-fr/data/master/
 # make title
 st.title("DataViz App Covid-19 🦠")
 
-
+#%%
 @st.cache
 def get_data(url: str = URL_OPENCOVID19) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
@@ -77,7 +78,7 @@ def get_data(url: str = URL_OPENCOVID19) -> Tuple[pd.DataFrame, pd.DataFrame]:
     return df_covid19_region, df_covid19_fr
 
 
-# get data
+#%% get data
 df_covid19_region, df_covid19_fr = get_data()
 
 # create streamlit sidebar
@@ -98,6 +99,12 @@ df_covid19_region = df_covid19_region[
     df_covid19_region["maille_nom"].isin(multiselection)
 ].sort_values(by=["maille_nom", "date"], ascending=[True, False])
 
+
+#%% Graphs testing
+# unit_testing variables
+# multiselection = regions
+# option = "graph"
+# scale = "linear"
 
 if check_box_table:
     st.write(df_covid19_region)
@@ -225,3 +232,6 @@ st.info(
     """ by: [J. Fourmann](https://www.linkedin.com/in/j%C3%A9r%C3%A9mie-fourmann-7827b859/) | source: [GitHub](https://www.github.com)
         | data source: [Opencovid19-fr (GitHub)]('https://raw.githubusercontent.com/opencovid19-fr/data/master/dist/chiffres-cles.csv'). """
 )
+
+
+# %%
