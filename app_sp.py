@@ -99,9 +99,9 @@ df_covid19_es = df_covid19_es.fillna(value=0)
 
 df_covid19_region = df_covid19_region.append(df_covid19_es)
 
-df_covid19_region["dead_ratio"] = df_covid19_region["muertes"]/df_covid19_region["Población"]*1000
-df_covid19_region["cases_ratio"] = df_covid19_region["casos"]/df_covid19_region["Población"]*1000
-df_covid19_region["new_cases_ratio"] = df_covid19_region["nuevos"]/df_covid19_region["Población"]*1000
+df_covid19_region["dead_ratio"] = df_covid19_region["muertes"]/df_covid19_region["Población"]*100000
+df_covid19_region["cases_ratio"] = df_covid19_region["casos"]/df_covid19_region["Población"]*100000
+df_covid19_region["new_cases_ratio"] = df_covid19_region["nuevos"]/df_covid19_region["Población"]*100000
 
 df_covid19_region["fecha_D"] = pd.to_datetime(df_covid19_region["fecha"],format="%Y/%m/%d")
 
@@ -155,6 +155,7 @@ if viz_option == "cumulative":
     
     if st.checkbox("Numbers relative to population"):
         y_var = ["cases_ratio","dead_ratio"]
+        st.info("""Values are relative to 100k people""")
     else:
         y_var = ["casos","muertes"]        
     
@@ -199,10 +200,56 @@ if viz_option == "cumulative":
             tooltip=[x_var[1], y_var[1], "CCAA"],
         )
         .interactive()
-    )      
-
+    )
+    
+    if scale_t == "log":
+        scale = alt.Scale(type="log", domain=[min_log_cases[0], max_log_cases[0]], clamp=True)
+    
     st.altair_chart(c_diagnosed, use_container_width=True)
     st.altair_chart(c_deaths, use_container_width=True)
+    st.info("""Cumulated distributions of total cases, recovered and fatalities""")
+    
+    if st.checkbox("y axis independent for each region"):
+        y_scale_rs = "independent"
+    else:
+        y_scale_rs = "shared"
+
+    area_st_1 = (
+    alt.Chart(df_covid19_region).mark_area(opacity=0.5,line=True)
+    .encode(
+        alt.Y('casos:Q',scale=scale),    
+        x=x_var[0],
+        color=alt.value('#1f77b4'),
+    ).properties(
+        height=180,
+        width=180,
+    ))
+    area_st_2 = (
+        alt.Chart(df_covid19_region).transform_fold(
+        ['muertes', 'curados'],
+    ).mark_area(line=True).encode(
+            alt.Y('value:Q',stack=True,scale=scale),        
+            #alt.Color('key:N', scale=alt.Scale(scheme='set1')),#color='key:N',scheme=['#de3907','#5cc481']
+            color=alt.Color('key:N',
+                    scale=alt.Scale(
+                #domain='key',
+                range=['#2ca02c','#e41a1c'])),#ff7f0e
+            x=x_var[0],
+    ).properties(
+        height=180,
+        width=180,
+    ))    
+    
+    c_area_st = alt.layer(    
+    area_st_1,
+    area_st_2,
+    ).facet(    
+        facet='CCAA:N',
+        columns=3
+    ).resolve_scale(y=y_scale_rs)      
+
+
+    st.altair_chart(c_area_st, use_container_width=True)
 
 elif viz_option=="day delta":
     if st.checkbox("Relative x-axis"):
@@ -212,6 +259,7 @@ elif viz_option=="day delta":
     
     if st.checkbox("Numbers relative to population"):
         y_var = ["new_cases_ratio","dead_ratio"]
+        st.info("""Values are relative to 100k people""")
     else:
         y_var = ["nuevos","muertes"]   
     c_heatmap_confirmed = (
@@ -220,7 +268,7 @@ elif viz_option=="day delta":
         .encode(
             alt.X(x_var[0]),
             alt.Y("CCAA:N"),
-            alt.Color(y_var[0]+":Q", scale=alt.Scale(scheme="viridis")),
+            alt.Color(y_var[0]+":Q", scale=alt.Scale(scheme="yelloworangered")), #iridis
             tooltip=[x_var[0], "CCAA", y_var[0]],
         )
         .transform_filter((datum.nuevos >= 0))
@@ -230,12 +278,18 @@ elif viz_option=="day delta":
         alt.Chart(df_covid19_region)
         .mark_bar()#width)
         .encode(
-            alt.X(x_var[0]+":Q"),#type="temporal",timeUnit="day"),Esto funciona pero me pinta solo una semana
+            alt.X(x_var[0]+":T"),#type="temporal",timeUnit="day"),Esto funciona pero me pinta solo una semana
             alt.Y(y_var[0]+":Q"),            
             tooltip=[x_var[0], y_var[0]],
         )
-        .properties(height=200)
-        .facet(row='CCAA:N')
+        .properties(
+            height=180,
+            width=180,
+            )
+        .facet(
+            facet='CCAA:N',
+            columns=3,
+        )
         .interactive()
     )
     c_area_new = (
@@ -266,49 +320,132 @@ st.info(
         | data source: [victorvicpal/COVID19_es (GitHub)](https://raw.githubusercontent.com/victorvicpal/COVID19_es/master/data/final_data/dataCOVID19_es.csv). """
 )
 
-# %% graphs testing
 
-df_covid19_temp = df_covid19_region[df_covid19_region["CCAA"]=="Total_pais"]
-df_covid19_temp
+# %% graphs testing
+# Stacked areas
+df_covid19_temp = df_covid19_region[df_covid19_region["CCAA"]!="Total_pais"]
+#df_covid19_temp
+base1 = (
+    alt.Chart(df_covid19_temp).mark_area(opacity=0.5,line=True)
+    .encode(
+        alt.Y('casos:Q'),    
+        x='fecha_D',
+        color=alt.value('steelblue'),
+).properties(
+    height=180,
+    width=180,
+))
 base2 = (
     alt.Chart(df_covid19_temp).transform_fold(
     ['muertes', 'curados'],
-).mark_area(opacity=0.3).encode(
+).mark_area(line=True).encode(
         alt.Y('value:Q',stack=True),        
-        alt.Color('key:N', scale=alt.Scale(scheme='set1')),#color='key:N',scheme=['#de3907','#5cc481']        
+        #alt.Color('key:N', scale=alt.Scale(scheme='set1')),#color='key:N',scheme=['#de3907','#5cc481']
+        color=alt.Color('key:N',
+                   scale=alt.Scale(
+            #domain='key',
+            range=['#2ca02c','#ff7f0e'])),        
         x='fecha_D',
+).properties(
+    height=180,
+    width=180,
 ))
-base2
-#%%
-base1 = (
-    alt.Chart(df_covid19_temp).mark_line().encode(
-        alt.Y('casos:Q'),    
-        x='fecha_D',
-        color=alt.value('yellow'),
-))
-base1
 
-# %%
-alt.layer(  
+final_areas = alt.layer(    
   base1,
   base2,
-)
-
-# %%
+).facet(    
+    facet='CCAA:N',
+    columns=3
+).resolve_scale(y='shared')
+final_areas
+# final_areas = final_areas.resolve_scale(y='independent')
+# %% Lollipops 
 base = alt.Chart(df_covid19_region).encode(
     alt.X('fecha_D',type='temporal'),
     y="nuevos:Q",
     color=alt.value('black'),
 ).properties(
-    height=200
+    height=180,
+    width=180,
 )
 (alt.layer(  
   base.mark_point(),
   base.mark_rule()
-).facet(
-    row='CCAA:N',
-    #column='CCAA:N',
+).facet(    
+    facet='CCAA:N',
+    columns=3
 )
  .interactive())
 
+# %% Histogram
+
+#x_var = ["days_after_50_confirmed","days_after_5_deaths"]
+x_var = [x_date_var,x_date_var]
+
+y_var = ["new_cases_ratio","dead_ratio"]
+y_var = ["nuevos","muertes"]
+
+c_histog_new = (
+    alt.Chart(df_covid19_region)
+    .mark_bar()#width,size,binSpacing)
+    .encode(
+        alt.X(x_var[0]+":T",axis=alt.Axis(format='%d/%m')),#type="temporal",timeUnit="day"),Esto funciona pero me pinta solo una semana
+        alt.Y(y_var[0]+":Q"),            
+        tooltip=[x_var[0], y_var[0]],
+    )
+    .properties(
+        height=180,
+        width=180,
+        )
+    .facet(
+        facet='CCAA:N',
+        columns=3,
+    ).resolve_scale(y='independent')
+    .interactive()
+)
+c_histog_new
+# %%
+
+# c_diagnosed = (
+#     alt.Chart(df_covid19_region)
+#     .mark_line()
+#     .encode(
+#         alt.X(x_var[0]),
+#         alt.Y(y_var[0], scale=scale),        
+#         color=alt.condition(
+#             alt.datum.CCAA == "Total_pais",  
+#             alt.value('black'),     # which sets the line orange.
+#             alt.Color("CCAA"),
+#         ),
+#         tooltip=[x_var[0], y_var[0], "CCAA"],
+#     )
+#     .interactive()
+# )    
+# c_diagnosed
+
+# %%
+#color=alt.condition(selector, 'count()', alt.value('lightgray'))
+single_nearest = alt.selection_single(on='mouseover', nearest=True,empty='none')
+c_diagnosed = (
+    alt.Chart(df_covid19_region)
+    .mark_line(interpolate="linear")
+    .encode(
+        alt.X(x_var[0]),
+        alt.Y(y_var[0], scale=scale),                
+        color=alt.condition(
+            single_nearest,
+            alt.Color("CCAA:N", scale=alt.Scale(scheme="category20b")), 
+            alt.value('lightgray')),        
+        tooltip=[x_var[0], y_var[0], "CCAA"],
+        #strokeDash="CCAA",
+        # strokeDash=alt.condition(
+        #     alt.datum.CCAA == "Total_pais", [1,1], [0,0]),
+                    
+    ).add_selection(
+        single_nearest
+    ).interactive()
+)    
+c_diagnosed
+#me gustaría usar este color scheme category20b
 # %%
