@@ -94,7 +94,8 @@ df_covid19_es["days_after_50_confirmed"] = (
     ["casos"]
     .rank(method="first", ascending=True)
 )
-df_covid19_es['CCAA'] = 'Total_pais'
+col_name_global = 'Total_pais'
+df_covid19_es['CCAA'] = col_name_global
 df_covid19_es = df_covid19_es.fillna(value=0)
 
 df_covid19_region = df_covid19_region.append(df_covid19_es)
@@ -146,7 +147,7 @@ st.sidebar.info(
     "Thanks to Tlse Data Engineering for the [original project](https://github.com/TlseDataEngineering/data-app-covid19)."
 )
 
-text_4_regions = """👈 You can remove/add regions and graphs are updated automatically."""
+text_4_regions = """👈 You can remove/add regions from the left and graphs are updated automatically."""
 if viz_option == "-":
     st.write("""👈 Select an analysis type from the dropdown menu on the left.""")
 
@@ -180,18 +181,29 @@ elif viz_option == "cumulative":
     if scale_t == "log":
         scale = alt.Scale(type="log", domain=[min_log_cases[0], max_log_cases[0]], clamp=True)
     
-    single_nearest = alt.selection_single(on='mouseover', nearest=True,empty='none')
+    st.write("""You can highlight lines from the graphs below 👇 by holding shift + left click.
+    To remove the selection click outside a line""")
+    #single_nearest = alt.selection_single(on='mouseover', nearest=True,empty='none')
+    single_nearest = alt.selection_multi(nearest=True)#,fields=['CCAA'],bind='legend'
+    #single_nearest_mo = alt.selection_multi(on='mouseover',nearest=True)#,fields=['CCAA'],bind='legend'
+
     Line_Base_Chart = (
         alt.Chart(df_covid19_region)
         .mark_line()
         .encode(
+            # color=alt.condition(
+            #     single_nearest,
+            #     alt.Color("CCAA:N", scale=alt.Scale(scheme="category20b")), 
+            #     alt.value('lightgray')),
+            #color=alt.Color("CCAA:N", scale=alt.Scale(scheme="category20b")),             
             color=alt.condition(
-                single_nearest,
-                alt.Color("CCAA:N", scale=alt.Scale(scheme="category20b")), 
-                alt.value('lightgray'))
-        ).add_selection(
-        single_nearest
-        ).interactive()
+                datum.CCAA==col_name_global,
+                alt.value('black'),
+                alt.Color("CCAA:N", scale=alt.Scale(scheme="category20b"))),
+            opacity = alt.condition(single_nearest, alt.value(1), alt.value(0.2)),
+            size = alt.condition(~single_nearest, alt.value(1.5), alt.value(2.5)),
+        ).add_selection(single_nearest)
+        #.interactive()
     )
 
     c_diagnosed = (
@@ -214,24 +226,28 @@ elif viz_option == "cumulative":
         )
     )
     
-    if scale_t == "log":
-        scale = alt.Scale(type="log", domain=[min_log_cases[0], max_log_cases[0]], clamp=True)
+    full_cumulated = alt.vconcat(c_diagnosed, c_deaths)
     
-    st.altair_chart(c_diagnosed, use_container_width=True)
-    st.altair_chart(c_deaths, use_container_width=True)
+    st.altair_chart(full_cumulated, use_container_width=True)
+    # st.altair_chart(c_diagnosed, use_container_width=True)
+    # st.altair_chart(c_deaths, use_container_width=True)
     st.write("""\n\n""")
 
     st.info("""Cumulated distributions of total cases, recovered and fatalities""")
     
+    if scale_t == "log":
+        scale = alt.Scale(type="log", domain=[min_log_cases[0], max_log_cases[0]], clamp=True)
     if st.checkbox("y axis independent for each region"):
         y_scale_rs = "independent"
     else:
         y_scale_rs = "shared"
+        if scale_t == "log":
+            scale = alt.Scale(type="log", clamp=True)
 
     area_st_1 = (
     alt.Chart(df_covid19_region).mark_area(opacity=0.5,line=True)
     .encode(
-        alt.Y('casos:Q',scale=scale),    
+        alt.Y('casos:Q',scale=scale,axis=alt.Axis(title='count')),
         x=x_var[0],
         color=alt.value('#1f77b4'),
     ).properties(
@@ -242,7 +258,7 @@ elif viz_option == "cumulative":
         alt.Chart(df_covid19_region).transform_fold(
         ['muertes', 'curados'],
     ).mark_area(line=True).encode(
-            alt.Y('value:Q',stack=True,scale=scale),        
+            alt.Y('value:Q',stack=True,scale=scale,axis=alt.Axis(title='count')),
             #alt.Color('key:N', scale=alt.Scale(scheme='set1')),#color='key:N',scheme=['#de3907','#5cc481']
             color=alt.Color('key:N',
                     scale=alt.Scale(
@@ -325,7 +341,10 @@ elif viz_option=="histo":
 
 st.info(
     """ by: [R. Jimenez Sanchez](https://www.linkedin.com/in/robertojimenezsanchez/) | source: [GitHub](https://www.github.com)
-        | data source: [victorvicpal/COVID19_es (GitHub)](https://raw.githubusercontent.com/victorvicpal/COVID19_es/master/data/final_data/dataCOVID19_es.csv). """
+        | data source: [victorvicpal/COVID19_es (GitHub)](https://github.com/victorvicpal/COVID19_es/blob/master/data/final_data/dataCOVID19_es.csv). """
 )
 
 
+
+
+# %%
