@@ -251,7 +251,7 @@ test_c = alt.Chart(source).mark_area().encode(
 ).add_selection(
     selection
 )
-test_c
+st.altair_chart(test_c, use_container_width=True)
 
 #single_nearest = alt.selection_single(on='mouseover', nearest=True,empty='none')
 #single_nearest = alt.selection_multi(nearest=True)#,fields=[region_title],bind='legend'
