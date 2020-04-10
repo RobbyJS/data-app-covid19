@@ -2,7 +2,10 @@
 import pandas as pd
 import streamlit as st
 import altair as alt
+import numpy as np
+
 from math import ceil, floor, log10
+from vega_datasets import data as vg_data
 
 from altair import datum
 from typing import Tuple
@@ -10,6 +13,13 @@ from typing import Tuple
 URL_OPENCOVID19 = "https://raw.githubusercontent.com/victorvicpal/COVID19_es/master/data/final_data/dataCOVID19_es.csv"
 url_pop_ccaa = "https://raw.githubusercontent.com/victorvicpal/COVID19_es/master/data/info_data/Poblaci%C3%B3nCCAA.csv"
 
+url_intern_root = "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/"
+time_series_path = "csse_covid_19_time_series/" 
+url_inter_conf = url_intern_root+time_series_path+"time_series_covid19_confirmed_global.csv"
+url_inter_death = url_intern_root+time_series_path+"time_series_covid19_deaths_global.csv"
+url_inter_recov = url_intern_root+time_series_path+"time_series_covid19_recovered_global.csv"
+url_cov_country_codes = url_intern_root+"UID_ISO_FIPS_LookUp_Table.csv"
+#url_intern_pop = "https://raw.githubusercontent.com/datasets/population/master/data/population.csv"
 
 # make title
 st.title("DataViz App Covid-19 🦠")
@@ -24,9 +34,32 @@ def truncate_10(n,up_down):
         round_op = lambda x: floor(x)
 
     return float(round_op(n/10**temp)*(10**temp))
+
+#%% Variables necessary to functions below
+col_name_global = 'Country_total'
 #%%
 @st.cache
-def get_data(url) -> Tuple[pd.DataFrame]:
+def intern_data_ops(df,value_df):
+    """Set of operations that are necessary on the three files containing the international data"""
+    # Drop unnecessary columns
+    col_list_rm = [0,2,3]
+    col_list_rm = df.columns.values[col_list_rm]
+    df.drop(col_list_rm,axis=1,inplace=True)
+    df = df.groupby("Country/Region",as_index=False).sum()
+    dates_st = 1
+    dates_cols = df.columns.values[dates_st:]
+    df = pd.melt(
+        df,
+        id_vars = ["Country/Region"],
+        value_vars = dates_cols,
+        var_name = "Date",
+        value_name = value_df
+    )
+    #renames?
+    
+    return df
+#%%
+def get_data(which_data='World') -> Tuple[pd.DataFrame]:
     """
     1 - Get data from opencovid19 repository
     2 - Transform raw data into dataframe
@@ -35,87 +68,143 @@ def get_data(url) -> Tuple[pd.DataFrame]:
                                               'delta_cas_confirmes', 'fatality_rate', 'days_after_5_deaths',
                                                'days_after_50_confirmed']) 
     """
-    # 1 - Get data
-    data = pd.read_csv(url)
-    #data = pd.read_csv(url)
-    df_covid19_region = data
+    global region_title
+    if which_data == 'World':
+        region_title = "Country"
+        col_names = list(["Country/Region","Date"])
+        data = intern_data_ops(pd.read_csv(url_inter_conf),"Confirmed")
+        data = data.merge(
+            intern_data_ops(pd.read_csv(url_inter_death),"Deaths"),
+            on=col_names,
+            how='inner'
+            )
+        data = data.merge(
+            intern_data_ops(pd.read_csv(url_inter_recov),"Recovered"),
+            on=col_names,
+            how='inner')       
+        col_names=['month','day','year']
+        data[col_names] = data.Date.str.split("/",expand=True) 
+        data["year"] = data["year"].astype(int)+2000
+        # data["day"] = data["day"].map('${:,.2f}'.format)
+        data["Date"] = data["year"].astype(str)+"-"+data["month"]+"-"+data["day"]
+        # We remove the unnecessary columns
+        data.drop(col_names,axis=1,inplace=True)        
+        data.rename(columns={"Country/Region":region_title},inplace=True)
+        #%% Now we load the country codes
+        df_codes = pd.read_csv(url_cov_country_codes)
+        df_codes.rename(columns={"Country_Region":region_title,"iso3":"Country Code"},inplace=True)
+        # keep only rows for which the "combined key" = "Country". That leaves only the row
+        # that gathers all data for a country
+        mask_countries = np.where(df_codes[region_title] == df_codes['Combined_Key']
+                            , True, False)
+        df_codes = df_codes[mask_countries]
+        # And we add the population column to COVID data by merge operation
+        data = data.merge(df_codes[[region_title,'Population','Lat', 'Long_']],how="left")
+        # I need a column with the new cases
+            # compute delta_cas_confirmes by making the diff between rows on cas_confirmes grouped by region
+        data["New_cases"] = data.groupby(region_title)["Confirmed"].diff()
+        # Coming out of this condition I have the data df which contains: 
+        # Index(['Country', 'Date', 'Confirmed', 'Deaths', 'Recovered', 'Population','New_cases'], dtype='object')
+        # I need the same for Spain data. Except maybe for 'Country' == "CCAA"
+
+
+    else:
+        region_title = "CCAA"
+        # 1 - Get COVID data
+        data = pd.read_csv(URL_OPENCOVID19)        
+        data.rename(columns={"muertes":"Deaths","fecha":"Date","curados":"Recovered","casos":"Confirmed","nuevos":"New_cases"},
+                    inplace=True)       
+
+
+        # 2 - Get regions population data
+        df_regions = pd.read_csv(url_pop_ccaa)
+        df_regions.rename(columns={"Población":"Population"},
+                    inplace=True) 
+        # add population information
+        data = data.merge(df_regions,on=region_title,how='inner')
+        # 3 - Calculate the data for the whole country 
+        col_idx = list(range(0,data.shape[1]))
+        df_covid19_es = data.iloc[:,col_idx].groupby(['Date'],as_index=False).sum()        
+        df_covid19_es[region_title] = col_name_global
+        df_covid19_es = df_covid19_es.fillna(value=0)
+
+        data = data.append(df_covid19_es,ignore_index=True)
+        # 4 - Remove unnecessary columns
+        data.drop(['IA','Densidad'],axis=1,inplace=True)
+        del df_covid19_es
     
-    df_covid19_region = df_covid19_region.sort_values(by=["CCAA", "fecha"])
-    # create a new index based from day after 5 deaths
-    df_covid19_region["days_after_5_deaths"] = (
-        df_covid19_region[df_covid19_region.muertes > 5]
-        .groupby("CCAA")["muertes"]
-        .rank(method="first", ascending=True)
-    )
-    # create a new index based from day after 50 confirmed
-    df_covid19_region["days_after_50_confirmed"] = (
-        df_covid19_region[df_covid19_region.casos > 50]
-        .groupby("CCAA")["casos"]
-        .rank(method="first", ascending=True)
-    )
-    df_covid19_region = df_covid19_region.fillna(value=0)
-
-
-    return df_covid19_region
+    return data
 
 #%%
-df_covid19_region = get_data(URL_OPENCOVID19)
-df_regions = pd.read_csv(url_pop_ccaa)
+scope = st.sidebar.selectbox("Scope of Analysis:", ("World","Spain"))
+#scope = "World"
+df_covid19_region = get_data(scope)
+
 #print(df_covid19_es.head())
 #print(df_covid19_region.head())
 #print(df_regions)
+#%% Calculation of new indexes and new columns
+df_covid19_region["Date_D"] = pd.to_datetime(df_covid19_region["Date"],format="%Y/%m/%d")
+df_covid19_region["Date"] = df_covid19_region["Date_D"] 
+df_covid19_region.drop(['Date_D'],axis=1,inplace=True)
+df_covid19_region = df_covid19_region.sort_values(by=[region_title, "Date"])
+#%% create a new index based from day after 5 deaths
+df_covid19_region["days_after_5_deaths"] = (
+    df_covid19_region[df_covid19_region.Deaths > 5]
+    .groupby(by=region_title)["Deaths"]
+    .rank(method="first", ascending=True)
+)
+#%% create a new index based from day after 50 confirmed
+df_covid19_region["days_after_50_confirmed"] = (
+    df_covid19_region[df_covid19_region.Confirmed > 50]
+    .groupby(region_title)["Confirmed"]
+    .rank(method="first", ascending=True)
+)
 
+#maybe remove this line. Could be useful if I want to show for each country where they start to had COVID issues
+df_covid19_region = df_covid19_region.fillna(value=0)
 #%% create necessary variables
 
-# Change dates to correct format
-# dates = pd.DataFrame(df_covid19_region['fecha'])
-# df_Madrid = df_covid19_region[df_covid19_region["CCAA"].isin(["Madrid"])]
-# dates = pd.to_datetime(df_Madrid.iloc[:,
-#     df_covid19_region.columns.get_loc('fecha')],format="%Y/%m/%d")
+df_covid19_region["New_Deaths"] = df_covid19_region.groupby(region_title)["Deaths"].diff()
+df_covid19_region["New_Cases_AVG"] = df_covid19_region.groupby(region_title)['New_cases'].transform(lambda x: x.rolling(5, 1).mean())
+df_covid19_region["New_Deaths_AVG"] = df_covid19_region.groupby(region_title)['New_Deaths'].transform(lambda x: x.rolling(5, 1).mean())
 
-# Parece que no puedo convertir la fecha a datetime porque tengo fechas repetidas. o eso entiendo
-# pippo = pd.to_datetime(df_covid19_region["fecha"],format="%Y/%m/%d")
-# add population information
-df_covid19_region = df_covid19_region.merge(df_regions,on='CCAA',how='inner')
-#col_idx = [1,2]+list(range(4,9))
+df_covid19_region["dead_ratio"] = df_covid19_region["Deaths"]/df_covid19_region["Population"]*100000
+df_covid19_region["cases_ratio"] = df_covid19_region["Confirmed"]/df_covid19_region["Population"]*100000
+df_covid19_region["new_cases_ratio"] = df_covid19_region["New_cases"]/df_covid19_region["Population"]*100000
+df_covid19_region["new_death_ratio"] = df_covid19_region["New_Deaths"]/df_covid19_region["Population"]*100000
 
 
-col_idx = list(range(0,df_covid19_region.shape[1]))
-df_covid19_es = df_covid19_region.iloc[:,col_idx].groupby(['fecha'],as_index=False).sum()
-# create a new index based from day after 5 deaths
-df_covid19_es["days_after_5_deaths"] = (
-    df_covid19_es[df_covid19_es.muertes > 5]
-    ["muertes"]
-    .rank(method="first", ascending=True)
-)
-# create a new index based from day after 50 confirmed
-df_covid19_es["days_after_50_confirmed"] = (
-    df_covid19_es[df_covid19_es.casos > 50]
-    ["casos"]
-    .rank(method="first", ascending=True)
-)
-col_name_global = 'Total_pais'
-df_covid19_es['CCAA'] = col_name_global
-df_covid19_es = df_covid19_es.fillna(value=0)
+df_covid19_region["Active Cases"] = df_covid19_region["Confirmed"]-df_covid19_region["Deaths"]-df_covid19_region["Recovered"] 
 
-df_covid19_region = df_covid19_region.append(df_covid19_es)
 
-df_covid19_region["dead_ratio"] = df_covid19_region["muertes"]/df_covid19_region["Población"]*100000
-df_covid19_region["cases_ratio"] = df_covid19_region["casos"]/df_covid19_region["Población"]*100000
-df_covid19_region["new_cases_ratio"] = df_covid19_region["nuevos"]/df_covid19_region["Población"]*100000
-
-df_covid19_region["fecha_D"] = pd.to_datetime(df_covid19_region["fecha"],format="%Y/%m/%d")
-
-regions = list(df_covid19_region.CCAA.unique())
-x_date_var = "fecha_D"
+x_date_var = "Date"
 
 
 #%% Streamlit inputs %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 ################################################################################################
 viz_option = st.sidebar.selectbox("Visualisation: ", ("-","cumulative", "day delta"))
 
+regions = list(df_covid19_region[region_title].unique())
+if scope=="World":
+    df_max_conf = (df_covid19_region[[region_title,"Confirmed"]]
+    .groupby(region_title).max()
+    .sort_values(by="Confirmed",ascending=False)
+    )
+    regions_def = (df_max_conf.index[:12].to_list())
+    if "Korea, South" not in regions_def:
+        regions_def[-1] = "Korea, South"
+    del df_max_conf
+    regions_def.sort()
+else:
+    regions_remove = ['Ceuta','Melilla']
+    regions_def = regions.copy()
+    for ccaa in regions_remove:
+        regions_def.remove(ccaa)
+# Quizás para ESpaña quitar Ceuta y Melilla
+
 multiselection = st.sidebar.multiselect(
-    "Choose the regions:", regions, default=regions
+    "Choose the regions:", regions, default=regions_def
 )
 
 
@@ -126,9 +215,10 @@ multiselection = st.sidebar.multiselect(
 # scale = "linear"
 
 # code
+data_all = df_covid19_region[["Country","Lat","Long_","Confirmed"]].copy()
 df_covid19_region = df_covid19_region[
-    df_covid19_region["CCAA"].isin(multiselection)
-].sort_values(by=["CCAA", "fecha"], ascending=[True, False])
+    df_covid19_region[region_title].isin(multiselection)
+].sort_values(by=[region_title, x_date_var], ascending=[True, False])
 
 # intentar pintarlo awquí fuera
 # comparar mis datos con los originales
@@ -148,8 +238,76 @@ st.sidebar.info(
 )
 
 text_4_regions = """👈 You can remove/add regions from the left and graphs are updated automatically."""
+
+source = vg_data.unemployment_across_industries.url
+
+selection = alt.selection(type="multi",fields=['series'], bind="legend",on="click")
+
+test_c = alt.Chart(source).mark_area().encode(
+    alt.X('yearmonth(date):T', axis=alt.Axis(domain=False, format='%Y', tickSize=0)),
+    alt.Y('sum(count):Q', stack='center', axis=None),
+    alt.Color('series:N', scale=alt.Scale(scheme='category20b')),
+    opacity=alt.condition(selection, alt.value(1), alt.value(0.2))
+).add_selection(
+    selection
+)
+test_c
+
+#single_nearest = alt.selection_single(on='mouseover', nearest=True,empty='none')
+#single_nearest = alt.selection_multi(nearest=True)#,fields=[region_title],bind='legend'
+single_nearest = alt.selection_multi(fields=[region_title],bind='legend',on="click")
+#single_nearest_mo = alt.selection_multi(on='mouseover',nearest=True)#,fields=[region_title],bind='legend'
+# POssible fix to complicated selection: https://altair-viz.github.io/gallery/multiline_highlight.html
+
+Line_Base_Chart = (
+    alt.Chart(df_covid19_region)
+    .mark_line()
+    .encode(
+        # color=alt.condition(
+        #     single_nearest,
+        #     alt.Color(region_title+':N", scale=alt.Scale(scheme="category20b")), 
+        #     alt.value('lightgray')),
+        #color=alt.Color(region_title+':N", scale=alt.Scale(scheme="category20b")),             
+        color=alt.condition(
+            #datum.CCAA==col_name_global,
+            datum[region_title]==col_name_global,
+            alt.value('black'),
+            alt.Color(region_title+":N", scale=alt.Scale(scheme="category20"))),
+        opacity = alt.condition(single_nearest, alt.value(1), alt.value(0.2)),
+        size = alt.condition(~single_nearest, alt.value(1.5), alt.value(2.5)),
+    ).add_selection(single_nearest)
+    #.interactive()
+)
+
+
 if viz_option == "-":
     st.write("""👈 Select an analysis type from the dropdown menu on the left.""")
+    
+    source = alt.topo_feature(vg_data.world_110m.url, 'countries')
+
+    #background_C = 
+    points = (
+        alt.Chart(
+                data_all.groupby("Country").max()
+                )
+        .mark_circle().encode(
+                longitude='Long_:Q',
+                latitude='Lat:Q',
+                size=alt.Size('Confirmed:Q', title='Confirmed cases'),
+                color=alt.value('steelblue'),
+                tooltip=['Country:N','Confirmed:Q'])
+    )
+
+
+    # Layering and configuring the components
+    map_chart = alt.layer(           
+        alt.Chart(source).mark_geoshape(fill='lightgrey', stroke='black'),
+        points,
+    ).project(
+        'naturalEarth1'
+    ).properties(width=750, height=500).configure_view(stroke=None)
+
+    st.altair_chart(map_chart, use_container_width=True)
 
 elif viz_option == "cumulative":
     st.write(text_4_regions)
@@ -162,7 +320,7 @@ elif viz_option == "cumulative":
         y_var = ["cases_ratio","dead_ratio"]
         st.info("""Values are relative to 100k people""")
     else:
-        y_var = ["casos","muertes"]        
+        y_var = ["Confirmed","Deaths"]        
     
     if st.checkbox("Log Scale"):
         max_log_cases = [truncate_10(df_covid19_region[y_var[0]].max(),"up"),
@@ -183,35 +341,16 @@ elif viz_option == "cumulative":
     
     st.write("""You can highlight lines from the graphs below 👇 by holding shift + left click.
     To remove the selection click outside a line""")
-    #single_nearest = alt.selection_single(on='mouseover', nearest=True,empty='none')
-    single_nearest = alt.selection_multi(nearest=True)#,fields=['CCAA'],bind='legend'
-    #single_nearest_mo = alt.selection_multi(on='mouseover',nearest=True)#,fields=['CCAA'],bind='legend'
+    
 
-    Line_Base_Chart = (
-        alt.Chart(df_covid19_region)
-        .mark_line()
-        .encode(
-            # color=alt.condition(
-            #     single_nearest,
-            #     alt.Color("CCAA:N", scale=alt.Scale(scheme="category20b")), 
-            #     alt.value('lightgray')),
-            #color=alt.Color("CCAA:N", scale=alt.Scale(scheme="category20b")),             
-            color=alt.condition(
-                datum.CCAA==col_name_global,
-                alt.value('black'),
-                alt.Color("CCAA:N", scale=alt.Scale(scheme="category20b"))),
-            opacity = alt.condition(single_nearest, alt.value(1), alt.value(0.2)),
-            size = alt.condition(~single_nearest, alt.value(1.5), alt.value(2.5)),
-        ).add_selection(single_nearest)
-        #.interactive()
-    )
+
 
     c_diagnosed = (
         Line_Base_Chart
         .encode(
             alt.X(x_var[0]),
             alt.Y(y_var[0], scale=scale),       
-            tooltip=[x_var[0], y_var[0], "CCAA"],                    
+            tooltip=[x_var[0], y_var[0], region_title],                    
     ))    
  
     # make plot on nb of deces by regions
@@ -222,7 +361,7 @@ elif viz_option == "cumulative":
         .encode(
             alt.X(x_var[1]),
             alt.Y(y_var[1], scale=scale),
-            tooltip=[x_var[1], y_var[1], "CCAA"],
+            tooltip=[x_var[1], y_var[1], region_title],
         )
     )
     
@@ -237,49 +376,60 @@ elif viz_option == "cumulative":
     
     if scale_t == "log":
         scale = alt.Scale(type="log", domain=[min_log_cases[0], max_log_cases[0]], clamp=True)
-    if st.checkbox("y axis independent for each region"):
+    if st.checkbox("y axis independent for each region",value=True):
         y_scale_rs = "independent"
     else:
         y_scale_rs = "shared"
         if scale_t == "log":
             scale = alt.Scale(type="log", clamp=True)
 
+    area_st_base = (
+        alt.Chart(df_covid19_region)
+        .encode(            
+            x=x_var[0],
+        ).properties(
+            height=150,
+            width=180,
+    )
+
+    )
     area_st_1 = (
-    alt.Chart(df_covid19_region).mark_area(opacity=0.5,line=True)
-    .encode(
-        alt.Y('casos:Q',scale=scale,axis=alt.Axis(title='count')),
-        x=x_var[0],
-        color=alt.value('#1f77b4'),
-    ).properties(
-        height=150,
-        width=180,
-    ))
+        area_st_base.mark_area(opacity=0.5,line=True)
+        .encode(
+            alt.Y('Confirmed:Q',scale=scale,axis=alt.Axis(title='count')),
+            color=alt.value('#1f77b4'),     
+        ))
     area_st_2 = (
-        alt.Chart(df_covid19_region).transform_fold(
-        ['muertes', 'curados'],
-    ).mark_area(line=True).encode(
+        area_st_base.mark_area(opacity=0.85,line=True)
+        .transform_fold(['Deaths','Recovered'])   
+        .encode(
             alt.Y('value:Q',stack=True,scale=scale,axis=alt.Axis(title='count')),
-            #alt.Color('key:N', scale=alt.Scale(scheme='set1')),#color='key:N',scheme=['#de3907','#5cc481']
             color=alt.Color('key:N',
                     scale=alt.Scale(
-                #domain='key',
-                range=['#71f594','#e41a1c'])),#ff7f0e,#71f594
-            x=x_var[0],
-    ).properties(
-        height=150,
-        width=180,
-    ))    
-    
+                        range=['#e41a1c','#71f594']),
+                    legend=alt.Legend(title=None)),#ff7f0e,#71f594
+            order = "key:N",     
+        ))    
+    line_st_3 =(
+        area_st_base.mark_line()
+        .encode(
+            alt.Y("Active Cases:Q",scale=scale,axis=alt.Axis(title='count')),
+            color=alt.value('black'), 
+        )
+    )
     c_area_st = alt.layer(    
     area_st_1,
     area_st_2,
+    line_st_3,
     ).facet(    
-        facet='CCAA:N',
+        facet=region_title+':N',
         columns=3
     ).resolve_scale(y=y_scale_rs)     
 
     st.altair_chart(c_area_st, use_container_width=True)
 
+##########################################################################################################
+##########################################################################################################
 elif viz_option=="day delta":
     st.write(text_4_regions)
     if st.checkbox("Relative x-axis"):
@@ -288,22 +438,66 @@ elif viz_option=="day delta":
         x_var = [x_date_var,x_date_var]
     
     if st.checkbox("Numbers relative to population"):
-        y_var = ["new_cases_ratio","dead_ratio"]
+        y_var = ["new_cases_ratio","new_deaths_ratio"]
         st.info("""Values are relative to 100k people""")
     else:
-        y_var = ["nuevos","muertes"]   
+        y_var = ["New_cases","New_Deaths"]   
+
+    if st.checkbox("Perform rolling average (5 days period)",value=True):
+        y_var = ["New_Cases_AVG","New_Deaths_AVG"]        
+    else:
+        y_var = ["New_cases","New_Deaths"]   
+    
+    if st.checkbox("Log Scale"):
+        max_log_cases = [truncate_10(df_covid19_region[y_var[0]].max(),"up"),
+         truncate_10(df_covid19_region[y_var[1]].max(),"up")]
+        min_log_cases = (
+            [truncate_10(
+                df_covid19_region[df_covid19_region[y_var[0]]>0][y_var[0]].min(),"down"),
+         truncate_10(
+                df_covid19_region[df_covid19_region[y_var[1]]>0][y_var[1]].min(),"down")])
+        scale_t = "log"
+    else:
+        scale = alt.Scale(type="linear")
+        scale_t = "linear" 
+
+    if scale_t == "log":
+        scale = alt.Scale(type="log", domain=[min_log_cases[0], max_log_cases[0]], clamp=True)
+
+    c_diagnosed_new = (
+        Line_Base_Chart
+        .encode(
+            alt.X(x_var[0]),
+            alt.Y(y_var[0], scale=scale),       
+            tooltip=[x_var[0], y_var[0], region_title],                    
+    ))    
+    
+    if scale_t == "log":
+        scale = alt.Scale(type="log", domain=[min_log_cases[1], max_log_cases[1]], clamp=True)
+    c_deaths_new = (
+        Line_Base_Chart
+        .encode(
+            alt.X(x_var[1]),
+            alt.Y(y_var[1], scale=scale),
+            tooltip=[x_var[1], y_var[1], region_title],
+        )
+    )
+    
+    full_cumulated = alt.vconcat(c_diagnosed_new, c_deaths_new)
+
     c_heatmap_confirmed = (
         alt.Chart(df_covid19_region)
         .mark_rect()
         .encode(
             alt.X(x_var[0]),
-            alt.Y("CCAA:N"),
+            alt.Y(region_title+":N"),
             alt.Color(y_var[0]+":Q", scale=alt.Scale(scheme="yelloworangered")), #iridis
-            tooltip=[x_var[0], "CCAA", y_var[0]],
+            tooltip=[x_var[0], region_title, y_var[0]],
         )
-        .transform_filter((datum.nuevos >= 0))
+        .transform_filter((datum.New_cases >= 0))
         .interactive()
     )
+    st.altair_chart(full_cumulated, use_container_width=True)
     st.altair_chart(c_heatmap_confirmed, use_container_width=True)
     st.write("""\n\n""")
     if st.checkbox("y axis independent for each region"):
@@ -313,8 +507,8 @@ elif viz_option=="day delta":
     c_histog_new = (
         alt.Chart(df_covid19_region)
         .mark_bar()#width)
-        .encode(
-            alt.X(x_var[0]+":T"),#type="temporal",timeUnit="day"),Esto funciona pero me pinta solo una semana
+        .encode(            
+            alt.X(x_var[0],type="temporal",timeUnit="yearmonthdate"),#,bin='binned',axis=alt.Axis(domain=False,format="%d"),timeUnit="day",type="temporal",),Esto funciona pero me pinta solo una semana
             alt.Y(y_var[0]+":Q"),            
             tooltip=[x_var[0], y_var[0]],
         )
@@ -323,7 +517,7 @@ elif viz_option=="day delta":
             width=180,
             )
         .facet(
-            facet='CCAA:N',
+            facet=region_title+':N',
             columns=3,
         ).resolve_scale(y=y_scale_rs)
         .interactive()
