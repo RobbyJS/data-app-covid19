@@ -474,7 +474,7 @@ elif viz_option == "cumulative":
             alt.Y("Active Cases:Q",scale=scale,axis=alt.Axis(title='count')),
             color=alt.value('black'),
             size = alt.value(2),
-            detail=alt.Detail('Active_cases_label', legend=alt.Legend(title=None))
+            shape=alt.Shape('Active_cases_label', legend=alt.Legend(title=None))
         )
     )
     c_area_st = alt.layer(    
