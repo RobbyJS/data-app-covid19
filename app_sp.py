@@ -20,6 +20,8 @@ url_inter_conf = url_intern_root+time_series_path+"time_series_covid19_confirmed
 url_inter_death = url_intern_root+time_series_path+"time_series_covid19_deaths_global.csv"
 url_inter_recov = url_intern_root+time_series_path+"time_series_covid19_recovered_global.csv"
 url_cov_country_codes = url_intern_root+"UID_ISO_FIPS_LookUp_Table.csv"
+
+world_json = "https://raw.githubusercontent.com/deldersveld/topojson/master/world-countries-sans-antarctica.json"
 #url_intern_pop = "https://raw.githubusercontent.com/datasets/population/master/data/population.csv"
 
 # make title
@@ -227,7 +229,7 @@ df_covid19_region = df_covid19_region[
     df_covid19_region[region_title].isin(multiselection)
 ].sort_values(by=[region_title, x_date_var], ascending=[True, False])
 
-df_covid19_region["Confirmed_label"] = "Confirmed"
+df_covid19_region["Confirmed_label"] = "Active"
 df_covid19_region["Active_cases_label"] = "Active cases"
 # intentar pintarlo awquí fuera
 # comparar mis datos con los originales
@@ -264,13 +266,13 @@ text_4_regions = """👈 You can remove/add regions from the left and graphs are
 
 #single_nearest = alt.selection_single(on='mouseover', nearest=True,empty='none')
 #single_nearest = alt.selection_multi(nearest=True)#,fields=[region_title],bind='legend'
-single_nearest = alt.selection_multi(fields=[region_title],bind='legend',on="click")
+#single_nearest = alt.selection_multi(fields=[region_title],bind='legend',on="click")
+single_nearest = alt.selection(type='multi',fields=[region_title],nearest=True)
 #single_nearest_mo = alt.selection_multi(on='mouseover',nearest=True)#,fields=[region_title],bind='legend'
 # POssible fix to complicated selection: https://altair-viz.github.io/gallery/multiline_highlight.html
 
-Line_Base_Chart = (
-    alt.Chart(df_covid19_region)
-    .mark_line()
+base = (
+    alt.Chart(df_covid19_region)    
     .encode(
         # color=alt.condition(
         #     single_nearest,
@@ -282,11 +284,29 @@ Line_Base_Chart = (
             datum[region_title]==col_name_global,
             alt.value('black'),
             alt.Color(region_title+":N", scale=alt.Scale(scheme="category20"))),
-        opacity = alt.condition(single_nearest, alt.value(1), alt.value(0.2)),
-        size = alt.condition(~single_nearest, alt.value(1.5), alt.value(2.5)),
-    ).add_selection(single_nearest)
+        # opacity = alt.condition(single_nearest, alt.value(1), alt.value(0.2)),
+        # size = alt.condition(~single_nearest, alt.value(1.5), alt.value(2.5)),
+    )
     #.interactive()
 )
+
+theseractus_points = (base.mark_circle().encode(
+        opacity=alt.value(0)
+    ).add_selection(
+        single_nearest
+    ).properties(
+        width=600
+    )
+    )
+
+lines = base.mark_line().encode(
+    opacity = alt.condition(single_nearest, alt.value(1), alt.value(0.2)),
+    size = alt.condition(~single_nearest, alt.value(1.5), alt.value(2.5)),
+    #tooltip=[x,y,region_title]
+)
+
+
+Line_Base_Chart = theseractus_points + lines
 
 #%%
 if viz_option == "-":
@@ -297,7 +317,8 @@ if viz_option == "-":
     dates_step = 4
     list_dates = list_dates[::dates_step]
     data_all = data_all[data_all.Date_N.isin(list_dates)]
-    source = alt.topo_feature(vg_data.world_110m.url, 'countries')
+    #source = alt.topo_feature(vg_data.world_110m.url, 'countries')
+    source = alt.topo_feature(world_json,'countries1')
 
     # Igual quitar los países que no tengan apenas nada
 
@@ -309,17 +330,22 @@ if viz_option == "-":
     map_holder = st.altair_chart(source)
     color = 'crimson'
     points = (
-        alt.Chart(data_all).mark_point(filled=True,fillOpacity=0.4,width=1.5,stroke=color)
+        alt.Chart(data_all).mark_circle(filled=True,fillOpacity=0.4,width=1.25,stroke=color)
         .encode(
                 longitude='Long_:Q',
                 latitude='Lat:Q',
-                size=alt.Size('Confirmed:Q', title='Confirmed cases',scale=alt.Scale(domain=[0,100000])),
+                size=alt.Size(
+                    'Confirmed:Q', 
+                    title='Confirmed cases',
+                    scale=alt.Scale(domain=[0,100000]),
+                    legend=alt.Legend(orient="top")),
                 color=alt.value(color),                
                 tooltip=['Country:N','Confirmed:Q'])
         .transform_filter(selector)
         .add_selection(
         selector))
 
+    selector.i
 
     # Layering and configuring the components
     map_chart = alt.layer(           
@@ -332,6 +358,10 @@ if viz_option == "-":
     map_holder.altair_chart(map_chart)   #
 
     # st.altair_chart(map_chart)#, use_container_width=True)
+
+    # st.write("Slider tests")
+    # dates_slider = st.slider("Date", int(list_dates[0]), int(list_dates[-1]), 1,dates_step)
+    # st.write("Slider says",dates_slider)
 ##########################################################################################################
 ##########################################################################################################
 elif viz_option == "cumulative":
@@ -365,7 +395,7 @@ elif viz_option == "cumulative":
         scale = alt.Scale(type="log", domain=[min_log_cases[0], max_log_cases[0]], clamp=True)
     
     st.write("""You can highlight lines from the graphs below 👇 by holding shift + left click.
-    To remove the selection click outside a line""")
+    To remove the selection double click anywhere in the graph.""")
     
 
 
@@ -444,7 +474,7 @@ elif viz_option == "cumulative":
             alt.Y("Active Cases:Q",scale=scale,axis=alt.Axis(title='count')),
             color=alt.value('black'),
             size = alt.value(2),
-            shape=alt.Shape('Active_cases_label', legend=alt.Legend(title=None))
+            detail=alt.Detail('Active_cases_label', legend=alt.Legend(title=None))
         )
     )
     c_area_st = alt.layer(    
@@ -460,12 +490,17 @@ elif viz_option == "cumulative":
 
 ##########################################################################################################
 ##########################################################################################################
+
 elif viz_option=="day delta":
     st.write(text_4_regions)
     if st.checkbox("Relative x-axis"):
         x_var = ["days_after_50_confirmed","days_after_5_deaths"]
+        x_hist = alt.X(x_var[0]+':Q',band=0,
+                    axis=alt.Axis(title='Days'))
     else:
         x_var = [x_date_var,x_date_var]
+        x_hist = alt.X(x_var[0],type="temporal",timeUnit="yearmonthdate",
+                    axis=alt.Axis(format="%b-%d",title='date'))
     
     if st.checkbox("Numbers relative to population"):
         y_var = ["new_cases_ratio","new_deaths_ratio"]
@@ -538,9 +573,7 @@ elif viz_option=="day delta":
         alt.Chart(df_covid19_region)
         .mark_bar()#width)
         .encode(            
-            alt.X( # supongo que puedo poner un if aquí dentro? o crear alt.X fuera como un objeto independiente
-                x_var[0],type="temporal",timeUnit="yearmonthdate",
-                    axis=alt.Axis(format="%b-%d",title='date')),#,bin='binned',axis=alt.Axis(domain=False,format="%d"),timeUnit="day",type="temporal",),Esto funciona pero me pinta solo una semana
+            x_hist,
             alt.Y(y_var[0]+":Q"),            
             tooltip=[x_var[0], y_var[0]],
         )
