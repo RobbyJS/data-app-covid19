@@ -20,7 +20,8 @@ url_inter_conf = url_intern_root+time_series_path+"time_series_covid19_confirmed
 url_inter_death = url_intern_root+time_series_path+"time_series_covid19_deaths_global.csv"
 url_inter_recov = url_intern_root+time_series_path+"time_series_covid19_recovered_global.csv"
 url_cov_country_codes = url_intern_root+"UID_ISO_FIPS_LookUp_Table.csv"
-url_ccaa_coords = "/home/roberto/Documents/python/scripts/covid/data/CCAA_coords.csv"
+#url_ccaa_coords = "/home/roberto/Documents/python/scripts/covid/data/CCAA_coords.csv"
+url_ccaa_coords = "https://raw.githubusercontent.com/RobbyJS/data-app-covid19/master/data/CCAA_coords.csv"
 
 json_root = "https://raw.githubusercontent.com/deldersveld/topojson/master/"
 world_json = json_root+"world-countries-sans-antarctica.json"
@@ -180,8 +181,8 @@ df_covid19_region["New_Deaths_AVG"] = df_covid19_region.groupby(region_title)['N
 
 df_covid19_region["dead_ratio"] = df_covid19_region["Deaths"]/df_covid19_region["Population"]*100000
 df_covid19_region["cases_ratio"] = df_covid19_region["Confirmed"]/df_covid19_region["Population"]*100000
-df_covid19_region["new_cases_ratio"] = df_covid19_region["New_cases"]/df_covid19_region["Population"]*100000
-df_covid19_region["new_death_ratio"] = df_covid19_region["New_Deaths"]/df_covid19_region["Population"]*100000
+# df_covid19_region["new_cases_ratio"] = df_covid19_region["New_cases"]/df_covid19_region["Population"]*100000
+# df_covid19_region["new_death_ratio"] = df_covid19_region["New_Deaths"]/df_covid19_region["Population"]*100000
 
 
 df_covid19_region["Active Cases"] = df_covid19_region["Confirmed"]-df_covid19_region["Deaths"]-df_covid19_region["Recovered"] 
@@ -192,7 +193,7 @@ x_date_var = "Date"
 
 #%% Streamlit inputs %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 ################################################################################################
-viz_option = st.sidebar.selectbox("Visualisation: ", ("-","cumulative", "day delta"))
+viz_option = st.sidebar.selectbox("Visualisation: ", ("Map","cumulative", "day delta"))
 
 regions = list(df_covid19_region[region_title].unique())
 if scope=="World":
@@ -344,8 +345,9 @@ def line_base_chart(x_var,y_var,scale_var):
         text_end)
 
 #%%
-if viz_option == "-":
-    st.write("""👈 Select an analysis type from the dropdown menu on the left.""")
+if viz_option == "Map":
+    st.write("""👈 Select the scope of the analysis from the dropdown menu on the left.
+    Choose also the visualisation type.""")
 
     
 
@@ -369,7 +371,7 @@ if viz_option == "-":
     # Igual quitar los países que no tengan apenas nada en la última fecha
 
     #background_C = 
-    slider = alt.binding_range(min=list_dates[0], max=list_dates[-1], step=dates_step, name='Days since 22/01/2020:')
+    slider = alt.binding_range(min=list_dates[0], max=list_dates[-1], step=dates_step, name='Days count:')
     selector = alt.selection_single(name="Date_N", fields=['Date_N'],
                             bind=slider,init={'Date_N':1})
 
@@ -415,20 +417,12 @@ if viz_option == "-":
 
     map_holder.altair_chart(map_chart)   #
 
-    # else:
-        
-    #     map_chart = (           
-    #         alt.Chart(source).mark_geoshape(fill='lightgrey', stroke='black')
-    #         .project(
-    #             'naturalEarth1'
-    #         ).properties(width=750, height=500).configure_view(stroke=None)
-    #     )
-        
-    #     st.altair_chart(map_chart)
+
 ##########################################################################################################
 ##########################################################################################################
 elif viz_option == "cumulative":
     st.write(text_4_regions)
+    
     options_for_x = ("Date","Days since 50 cases", "Days since 5 deaths")
     x_option = st.selectbox("x-axis: ", options_for_x,index=1)
     
@@ -450,23 +444,22 @@ elif viz_option == "cumulative":
          truncate_10(df_covid19_region[y_var[1]].max(),"up")]
         min_log_cases = (
             [truncate_10(
-                df_covid19_region[df_covid19_region[y_var[0]]>0][y_var[0]].min(),"down"),
+                df_covid19_region[df_covid19_region[y_var[0]]>0][y_var[0]].min(),"up"),
          truncate_10(
-                df_covid19_region[df_covid19_region[y_var[1]]>0][y_var[1]].min(),"down")])
+                df_covid19_region[df_covid19_region[y_var[1]]>0][y_var[1]].min(),"up")])
         scale_t = "log"
+        scale = alt.Scale(type="log", domain=[min_log_cases[0], max_log_cases[0]], clamp=True)
     else:
         scale = alt.Scale(type="linear")
         scale_t = "linear"        
 
-    # make plot on nb of diagnosed by regions    
-    if scale_t == "log":
-        scale = alt.Scale(type="log", domain=[min_log_cases[0], max_log_cases[0]], clamp=True)
+           
     
     st.write("""You can highlight lines from the graphs below 👇 by holding shift + left click.
     To remove the selection double click anywhere in the graph.""")
     
    
-
+    #min_log_cases
     c_diagnosed = line_base_chart(x_var,y_var[0],scale)
  
     # make plot on nb of deces by regions
@@ -550,48 +543,57 @@ elif viz_option == "cumulative":
 
 elif viz_option=="day delta":
     st.write(text_4_regions)
-    if st.checkbox("Relative x-axis"):
-        x_var = ["days_after_50_confirmed","days_after_5_deaths"]
-        x_hist = alt.X(x_var[0]+':Q',band=0,
+    
+    
+    options_for_x = ("Date","Days since 50 cases", "Days since 5 deaths")
+    x_option = st.selectbox("x-axis: ", options_for_x,index=1)
+    
+    if x_option == options_for_x[1]:
+        x_var = "days_after_50_confirmed"
+        x_hist = alt.X(x_var+':Q',band=0,
+                    axis=alt.Axis(title='Days'))
+    elif x_option == options_for_x[2]:
+        x_var = "days_after_5_deaths"
+        x_hist = alt.X(x_var+':Q',band=0,
                     axis=alt.Axis(title='Days'))
     else:
-        x_var = [x_date_var,x_date_var]
-        x_hist = alt.X(x_var[0],type="temporal",timeUnit="yearmonthdate",
+        x_var = x_date_var
+        x_hist = alt.X(x_var,type="temporal",timeUnit="yearmonthdate",
                     axis=alt.Axis(format="%b-%d",title='date'))
     
-    if st.checkbox("Numbers relative to population"):
-        y_var = ["new_cases_ratio","new_deaths_ratio"]
-        st.info("""Values are relative to 100k people""")
-    else:
-        y_var = ["New_cases","New_Deaths"]   
+   
 
+    y_var = ["New_cases","New_Deaths"]   
     if st.checkbox("Perform rolling average (5 days period)",value=True):
         y_var = ["New_Cases_AVG","New_Deaths_AVG"]        
     else:
-        y_var = ["New_cases","New_Deaths"]   
-    
-    if st.checkbox("Log Scale"):
-        max_log_cases = [truncate_10(df_covid19_region[y_var[0]].max(),"up"),
-         truncate_10(df_covid19_region[y_var[1]].max(),"up")]
-        min_log_cases = (
-            [truncate_10(
-                df_covid19_region[df_covid19_region[y_var[0]]>0][y_var[0]].min(),"down"),
-         truncate_10(
-                df_covid19_region[df_covid19_region[y_var[1]]>0][y_var[1]].min(),"down")])
-        scale_t = "log"
-    else:
-        scale = alt.Scale(type="linear")
-        scale_t = "linear" 
+        y_var = ["New_cases","New_Deaths"] 
 
-    if scale_t == "log":
-        scale = alt.Scale(type="log", domain=[min_log_cases[0], max_log_cases[0]], clamp=True)
+  
     
+    # if st.checkbox("Log Scale"):
+    #     max_log_cases = [truncate_10(df_covid19_region[y_var[0]].max(),"up"),
+    #      truncate_10(df_covid19_region[y_var[1]].max(),"up")]
+    #     min_log_cases = (
+    #         [truncate_10(
+    #             df_covid19_region[df_covid19_region[y_var[0]]>0][y_var[0]].min(),"down"),
+    #      truncate_10(
+    #             df_covid19_region[df_covid19_region[y_var[1]]>0][y_var[1]].min(),"down")])
+    #     scale_t = "log"
+    # else:
+        
+    #     scale_t = "linear" 
+
+    # if scale_t == "log":
+    #     scale = alt.Scale(type="log")#, domain=[min_log_cases[0], max_log_cases[0]], clamp=True)
     
-    c_diagnosed_new = line_base_chart(x_var[0],y_var[0],scale)
+    scale = alt.Scale(type="linear")
+    c_diagnosed_new = line_base_chart(x_var,y_var[0],scale)
     
-    if scale_t == "log":
-        scale = alt.Scale(type="log", domain=[min_log_cases[1], max_log_cases[1]], clamp=True)
-    c_deaths_new = line_base_chart(x_var[1],y_var[1],scale)
+    # if scale_t == "log":
+    #     scale = alt.Scale(type="log")#, domain=[min_log_cases[1], max_log_cases[1]], clamp=True)
+    
+    c_deaths_new = line_base_chart(x_var,y_var[1],scale)
     
     full_cumulated = alt.vconcat(c_diagnosed_new, c_deaths_new)
 
@@ -599,31 +601,36 @@ elif viz_option=="day delta":
     st.altair_chart(full_cumulated, use_container_width=True)
 
     st.write("""\n\n""")
-    if st.checkbox("y axis independent for each region"):
+    if st.checkbox("y axis independent for each region",value=True):
         y_scale_rs = "independent"
     else:
         y_scale_rs = "shared"
-    c_histog_new = (
-        alt.Chart(df_covid19_region)
-        .mark_bar()#width)
-        .encode(            
+    
+    area_st_d = (
+        alt.Chart(df_covid19_region).mark_area(opacity=0.5,line=True)
+        .transform_fold(y_var)   
+        .encode(
             x_hist,
-            alt.Y(y_var[0]+":Q"),            
-            tooltip=[x_var[0], y_var[0]],
-        )
-        .properties(
-            height=180,
+            alt.Y('value:Q',stack=False,axis=alt.Axis(title='count')),
+            color=alt.Color('key:N',
+                    scale=alt.Scale(
+                        range=['#1f77b4','#e41a1c']),#,'#71f594']),
+                    legend=alt.Legend(title=None)),#ff7f0e,#71f594
+            order = "key:N",
+            tooltip=[x_var,'value:Q'],                 
+        ).properties(
+            height=150,
             width=180,
-            )
-        .facet(
+        ).facet(
             facet=region_title+':N',
             columns=3,
         ).resolve_scale(y=y_scale_rs)
-        .interactive()
-    )
+        # .interactive()
+        )    
+
     
     
-    st.altair_chart(c_histog_new, use_container_width=True)
+    st.altair_chart(area_st_d, use_container_width=True)
 
 
 st.info(
