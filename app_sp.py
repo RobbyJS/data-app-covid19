@@ -6,7 +6,7 @@ import numpy as np
 import time
 
 from math import ceil, floor, log10
-from vega_datasets import data as vg_data
+#from vega_datasets import data as vg_data
 
 from altair import datum
 from typing import Tuple
@@ -20,9 +20,12 @@ url_inter_conf = url_intern_root+time_series_path+"time_series_covid19_confirmed
 url_inter_death = url_intern_root+time_series_path+"time_series_covid19_deaths_global.csv"
 url_inter_recov = url_intern_root+time_series_path+"time_series_covid19_recovered_global.csv"
 url_cov_country_codes = url_intern_root+"UID_ISO_FIPS_LookUp_Table.csv"
+url_ccaa_coords = "/home/roberto/Documents/python/scripts/covid/data/CCAA_coords.csv"
 
-world_json = "https://raw.githubusercontent.com/deldersveld/topojson/master/world-countries-sans-antarctica.json"
-#url_intern_pop = "https://raw.githubusercontent.com/datasets/population/master/data/population.csv"
+json_root = "https://raw.githubusercontent.com/deldersveld/topojson/master/"
+world_json = json_root+"world-countries-sans-antarctica.json"
+spain_json = json_root+"countries/spain/spain-comunidad-with-canary-islands.json"
+
 
 # make title
 st.title("DataViz App Covid-19 🦠")
@@ -135,6 +138,9 @@ def get_data(which_data='World') -> Tuple[pd.DataFrame]:
         # 4 - Remove unnecessary columns
         data.drop(['IA','Densidad'],axis=1,inplace=True)
         del df_covid19_es
+        df_coords = pd.read_csv(url_ccaa_coords,encoding='ISO-8859-14')
+        data = data.merge(df_coords,how="left")
+        #data['Lat'] = data['Long_'] = np.nan
     
     return data
 
@@ -218,7 +224,12 @@ multiselection = st.sidebar.multiselect(
 # scale = "linear"
 
 # Copy of all regions for the map plot
-data_all = df_covid19_region[["Country","Lat","Long_","Confirmed","Date"]].copy()
+# Patch :  remove eventually
+
+y_map_var = "Active Cases"
+data_all = (
+    df_covid19_region.loc[df_covid19_region[region_title]!=col_name_global,
+            [region_title,"Lat","Long_",y_map_var,"Date"]].copy())
 data_all["Date_N"] = (
     data_all.groupby(by=region_title)["Date"]
     .rank(method="first", ascending=True)
@@ -231,18 +242,7 @@ df_covid19_region = df_covid19_region[
 
 df_covid19_region["Confirmed_label"] = "Active"
 df_covid19_region["Active_cases_label"] = "Active cases"
-# intentar pintarlo awquí fuera
-# comparar mis datos con los originales
-# ver si el script original funciona en interactivo
 
-# c_deaths = (
-#     alt.Chart(df_covid19_es).
-#     mark_line(point=True).
-#     encode(
-#             x="days_after_5_deaths",
-#             y="muertes",
-#         ).interactive()
-# )
 
 st.sidebar.info(
     "Thanks to Tlse Data Engineering for the [original project](https://github.com/TlseDataEngineering/data-app-covid19)."
@@ -250,77 +250,123 @@ st.sidebar.info(
 
 text_4_regions = """👈 You can remove/add regions from the left and graphs are updated automatically."""
 
-# source = vg_data.unemployment_across_industries.url
+single_nearest = alt.selection(
+    type='multi',fields=[region_title],nearest=True,
+    #init={region_title:'Spain'}
+)
 
-# selection = alt.selection(type="multi",fields=['series'], bind="legend",on="click")
+def line_base_chart(x_var,y_var,scale_var):
+    
+    
+    base = (
+        alt.Chart(df_covid19_region)    
+        .encode(            
+            color=alt.condition(                
+                datum[region_title]==col_name_global,
+                alt.value('black'),
+                alt.Color(region_title+":N", scale=alt.Scale(scheme="category20"))),
+        #     # opacity = alt.condition(single_nearest, alt.value(1), alt.value(0.2)),
+        #     # size = alt.condition(~single_nearest, alt.value(1.5), alt.value(2.5)),
+        )
+        #.interactive()
+    )
 
-# test_c = alt.Chart(source).mark_area().encode(
-#     alt.X('yearmonth(date):T', axis=alt.Axis(domain=False, format='%Y', tickSize=0)),
-#     alt.Y('sum(count):Q', stack='center', axis=None),
-#     alt.Color('series:N', scale=alt.Scale(scheme='category20b')),
-#     opacity=alt.condition(selection, alt.value(1), alt.value(0.2))
-# ).add_selection(
-#     selection
-# )
-# st.altair_chart(test_c, use_container_width=True)
+    min_day = df_covid19_region[x_var].min()
+    max_day = df_covid19_region[x_var].max()
+    if x_var=='Date':
+        max_disp = (max_day+0.15*(max_day-min_day)).round('d')
+        domain = [min_day.isoformat(), max_disp.isoformat()]
+    else:
+        max_disp = max_day+0.15*(max_day-min_day)
+        domain = [min_day, max_disp]
 
-#single_nearest = alt.selection_single(on='mouseover', nearest=True,empty='none')
-#single_nearest = alt.selection_multi(nearest=True)#,fields=[region_title],bind='legend'
-#single_nearest = alt.selection_multi(fields=[region_title],bind='legend',on="click")
-single_nearest = alt.selection(type='multi',fields=[region_title],nearest=True)
-#single_nearest_mo = alt.selection_multi(on='mouseover',nearest=True)#,fields=[region_title],bind='legend'
-# POssible fix to complicated selection: https://altair-viz.github.io/gallery/multiline_highlight.html
+    theseractus_points = (base.mark_circle().encode(            
+            alt.X(x_var,scale=alt.Scale(domain = domain)),
+            alt.Y(y_var, scale=scale_var),       
+            # tooltip=[x_var, y_var, region_title],
+            opacity=alt.value(0),
+        ).add_selection(
+            single_nearest
+        ).properties(
+            width=600
+        )
+        )
 
-base = (
-    alt.Chart(df_covid19_region)    
-    .encode(
+    opacity_common = alt.condition(single_nearest, alt.value(1), alt.value(0.2))
+
+    point_end = base.mark_point(filled=True).encode(
+        x=alt.X('max('+x_var+')',axis=alt.Axis(title=x_var)),
+        y=alt.Y(y_var, aggregate={'argmax': x_var},axis=alt.Axis(title=y_var)),
+        opacity = opacity_common,
+        #shape=region_title+":N",
+        size = alt.value(60),
+        # color = alt.Color(region_title+":N", scale=alt.Scale(scheme="category20")),
         # color=alt.condition(
-        #     single_nearest,
-        #     alt.Color(region_title+':N", scale=alt.Scale(scheme="category20b")), 
-        #     alt.value('lightgray')),
-        #color=alt.Color(region_title+':N", scale=alt.Scale(scheme="category20b")),             
-        color=alt.condition(
-            #datum.CCAA==col_name_global,
-            datum[region_title]==col_name_global,
-            alt.value('black'),
-            alt.Color(region_title+":N", scale=alt.Scale(scheme="category20"))),
-        # opacity = alt.condition(single_nearest, alt.value(1), alt.value(0.2)),
-        # size = alt.condition(~single_nearest, alt.value(1.5), alt.value(2.5)),
-    )
-    #.interactive()
-)
-
-theseractus_points = (base.mark_circle().encode(
-        opacity=alt.value(0)
-    ).add_selection(
-        single_nearest
-    ).properties(
-        width=600
-    )
+        #         #datum.CCAA==col_name_global,
+        #         datum[region_title]==col_name_global,
+        #         alt.value('black'),
+        #         alt.Color(region_title+":N", scale=alt.Scale(scheme="category20"))),
+        
     )
 
-lines = base.mark_line().encode(
-    opacity = alt.condition(single_nearest, alt.value(1), alt.value(0.2)),
-    size = alt.condition(~single_nearest, alt.value(1.5), alt.value(2.5)),
-    #tooltip=[x,y,region_title]
-)
+    lines = base.mark_line().encode(
+        alt.X(x_var),
+        alt.Y(y_var, scale=scale_var),       
+        tooltip=[x_var, y_var, region_title],
+        opacity = opacity_common,
+        size = alt.condition(~single_nearest, alt.value(2), alt.value(3)),
+        # color=alt.condition(                
+        #         datum[region_title]==col_name_global,
+        #         alt.value('black'),
+        #         alt.Color(region_title+":N", scale=alt.Scale(scheme="category20"),legend=None)),       
+    )#.add_selection(single_nearest).properties(width=600)
 
+    
 
-Line_Base_Chart = theseractus_points + lines
+    text_end = (base.mark_text(
+                    align='left', baseline='middle', dx=4
+        ).encode(
+            x=alt.X('max('+x_var+')',axis=alt.Axis(title=x_var)),
+            y=alt.Y(y_var, aggregate={'argmax': x_var},axis=alt.Axis(title=y_var)),
+            text=alt.Text(region_title+":N"),
+            #color=alt.value('black'),
+            opacity = opacity_common,
+            # color=alt.condition(                
+            #     datum[region_title]==col_name_global,
+            #     alt.value('black'),
+            #     alt.Color(region_title+":N", scale=alt.Scale(scheme="category20"),legend=None)),
+    ))
+
+    return alt.layer(
+        theseractus_points,
+        point_end,
+        lines,
+        text_end)
 
 #%%
 if viz_option == "-":
     st.write("""👈 Select an analysis type from the dropdown menu on the left.""")
+
     
 
-    list_dates = data_all.loc[data_all["Country"]=="China","Date_N"].to_list()
-    dates_step = 4
+    if scope == "World":   
+        source = alt.topo_feature(world_json,'countries1')
+        scale_map=alt.Scale(domain=[0,100000])
+    else:
+        st.write("Map for Spain is under construction")
+        source = alt.topo_feature(spain_json,'ESP_adm1')
+        scale_map=alt.Scale(domain=[0,10000])
+
+    list_dates = data_all.loc[data_all[region_title]==multiselection[0],"Date_N"].to_list()
+    # Calcularlo automáticamente
+    dates_step = ceil(len(regions)*len(list_dates)/5000)
     list_dates = list_dates[::dates_step]
     data_all = data_all[data_all.Date_N.isin(list_dates)]
     #source = alt.topo_feature(vg_data.world_110m.url, 'countries')
-    source = alt.topo_feature(world_json,'countries1')
+    
+    # for spain it is NAME_1
 
-    # Igual quitar los países que no tengan apenas nada
+    # Igual quitar los países que no tengan apenas nada en la última fecha
 
     #background_C = 
     slider = alt.binding_range(min=list_dates[0], max=list_dates[-1], step=dates_step, name='Days since 22/01/2020:')
@@ -330,46 +376,68 @@ if viz_option == "-":
     map_holder = st.altair_chart(source)
     color = 'crimson'
     points = (
-        alt.Chart(data_all).mark_circle(filled=True,fillOpacity=0.4,width=1.25,stroke=color)
+        alt.Chart(data_all).mark_point(
+            filled=True,fillOpacity=0.4,
+            strokeWidth=1,strokeOpacity=1,stroke=color)
         .encode(
                 longitude='Long_:Q',
                 latitude='Lat:Q',
                 size=alt.Size(
-                    'Confirmed:Q', 
-                    title='Confirmed cases',
-                    scale=alt.Scale(domain=[0,100000]),
-                    legend=alt.Legend(orient="top")),
+                    y_map_var+':Q', 
+                    title='Active cases',
+                    scale=scale_map,
+                    legend=alt.Legend(orient="top"),
+                    ),                
                 color=alt.value(color),                
-                tooltip=['Country:N','Confirmed:Q'])
+                tooltip=[region_title+':N',y_map_var+':Q'])
         .transform_filter(selector)
         .add_selection(
         selector))
 
-    selector.i
+    text_map = (
+        alt.Chart(data_all).mark_text()
+        .encode(
+            longitude=alt.value(-145.1),
+            latitude=alt.value(-41.4),
+            text='Date',
+            size=alt.value(20)
+        ).transform_filter(selector)
+    )
 
     # Layering and configuring the components
     map_chart = alt.layer(           
         alt.Chart(source).mark_geoshape(fill='lightgrey', stroke='black'),
         points,
+        text_map,
     ).project(
         'naturalEarth1'
     ).properties(width=750, height=500).configure_view(stroke=None)
 
     map_holder.altair_chart(map_chart)   #
 
-    # st.altair_chart(map_chart)#, use_container_width=True)
-
-    # st.write("Slider tests")
-    # dates_slider = st.slider("Date", int(list_dates[0]), int(list_dates[-1]), 1,dates_step)
-    # st.write("Slider says",dates_slider)
+    # else:
+        
+    #     map_chart = (           
+    #         alt.Chart(source).mark_geoshape(fill='lightgrey', stroke='black')
+    #         .project(
+    #             'naturalEarth1'
+    #         ).properties(width=750, height=500).configure_view(stroke=None)
+    #     )
+        
+    #     st.altair_chart(map_chart)
 ##########################################################################################################
 ##########################################################################################################
 elif viz_option == "cumulative":
     st.write(text_4_regions)
-    if st.checkbox("Relative x-axis"):
-        x_var = ["days_after_50_confirmed","days_after_5_deaths"]
+    options_for_x = ("Date","Days since 50 cases", "Days since 5 deaths")
+    x_option = st.selectbox("x-axis: ", options_for_x,index=1)
+    
+    if x_option == options_for_x[1]:
+        x_var = "days_after_50_confirmed"
+    elif x_option == options_for_x[2]:
+        x_var = "days_after_5_deaths"
     else:
-        x_var = [x_date_var,x_date_var]
+        x_var = x_date_var
     
     if st.checkbox("Numbers relative to population"):
         y_var = ["cases_ratio","dead_ratio"]
@@ -397,28 +465,15 @@ elif viz_option == "cumulative":
     st.write("""You can highlight lines from the graphs below 👇 by holding shift + left click.
     To remove the selection double click anywhere in the graph.""")
     
+   
 
-
-
-    c_diagnosed = (
-        Line_Base_Chart
-        .encode(
-            alt.X(x_var[0]),
-            alt.Y(y_var[0], scale=scale),       
-            tooltip=[x_var[0], y_var[0], region_title],                    
-    ))    
+    c_diagnosed = line_base_chart(x_var,y_var[0],scale)
  
     # make plot on nb of deces by regions
     if scale_t == "log":
         scale = alt.Scale(type="log", domain=[min_log_cases[1], max_log_cases[1]], clamp=True)
-    c_deaths = (
-        Line_Base_Chart
-        .encode(
-            alt.X(x_var[1]),
-            alt.Y(y_var[1], scale=scale),
-            tooltip=[x_var[1], y_var[1], region_title],
-        )
-    )
+    
+    c_deaths = line_base_chart(x_var,y_var[1],scale)
     
     full_cumulated = alt.vconcat(c_diagnosed, c_deaths)
     
@@ -428,7 +483,9 @@ elif viz_option == "cumulative":
     # st.write("""\n\n""")
     st.markdown("---")
 
-    st.info("""Cumulated distributions of total cases, recovered and fatalities""")
+    st.write("""The stacked areas below show the cumulated distributions of active cases, 
+    recovered and death, which gives the total COVID-19 cases per """+region_title+""". 
+    Additionally, the active cases are plotted in a separated line""")
     
     if scale_t == "log":
         scale = alt.Scale(type="log", domain=[min_log_cases[0], max_log_cases[0]], clamp=True)
@@ -442,7 +499,7 @@ elif viz_option == "cumulative":
     area_st_base = (
         alt.Chart(df_covid19_region)
         .encode(            
-            x=x_var[0],
+            x=x_var,
         ).properties(
             height=150,
             width=180,
@@ -452,7 +509,7 @@ elif viz_option == "cumulative":
     area_st_1 = (
         area_st_base.mark_area(opacity=0.5,line=True)
         .encode(
-            alt.Y('Confirmed:Q',scale=scale,axis=alt.Axis(title='count')),
+            alt.Y('Confirmed:Q',axis=alt.Axis(title='count')),
             color=alt.value('#1f77b4'),
             opacity=alt.Opacity('Confirmed_label', legend=alt.Legend(title=None))     
             #color=alt.Color('Confirmed:N', scale=alt.Scale(range=['#1f77b4']), legend=alt.Legend(title=None))
@@ -461,7 +518,7 @@ elif viz_option == "cumulative":
         area_st_base.mark_area(opacity=0.85,line=True)
         .transform_fold(['Deaths','Recovered'])   
         .encode(
-            alt.Y('value:Q',stack=True,scale=scale,axis=alt.Axis(title='count')),
+            alt.Y('value:Q',stack=True,axis=alt.Axis(title='count')),
             color=alt.Color('key:N',
                     scale=alt.Scale(
                         range=['#e41a1c','#71f594']),
@@ -471,7 +528,7 @@ elif viz_option == "cumulative":
     line_st_3 =(
         area_st_base.mark_line()
         .encode(
-            alt.Y("Active Cases:Q",scale=scale,axis=alt.Axis(title='count')),
+            alt.Y("Active Cases:Q",axis=alt.Axis(title='count')),
             color=alt.value('black'),
             size = alt.value(2),
             shape=alt.Shape('Active_cases_label', legend=alt.Legend(title=None))
@@ -528,42 +585,19 @@ elif viz_option=="day delta":
 
     if scale_t == "log":
         scale = alt.Scale(type="log", domain=[min_log_cases[0], max_log_cases[0]], clamp=True)
-
-    c_diagnosed_new = (
-        Line_Base_Chart
-        .encode(
-            alt.X(x_var[0]),
-            alt.Y(y_var[0], scale=scale),       
-            tooltip=[x_var[0], y_var[0], region_title],                    
-    ))    
+    
+    
+    c_diagnosed_new = line_base_chart(x_var[0],y_var[0],scale)
     
     if scale_t == "log":
         scale = alt.Scale(type="log", domain=[min_log_cases[1], max_log_cases[1]], clamp=True)
-    c_deaths_new = (
-        Line_Base_Chart
-        .encode(
-            alt.X(x_var[1]),
-            alt.Y(y_var[1], scale=scale),
-            tooltip=[x_var[1], y_var[1], region_title],
-        )
-    )
+    c_deaths_new = line_base_chart(x_var[1],y_var[1],scale)
     
     full_cumulated = alt.vconcat(c_diagnosed_new, c_deaths_new)
 
-    c_heatmap_confirmed = (
-        alt.Chart(df_covid19_region)
-        .mark_rect()
-        .encode(
-            alt.X(x_var[0]),
-            alt.Y(region_title+":N"),
-            alt.Color(y_var[0]+":Q", scale=alt.Scale(scheme="yelloworangered")), #iridis
-            tooltip=[x_var[0], region_title, y_var[0]],
-        )
-        .transform_filter((datum.New_cases >= 0))
-        .interactive()
-    )
+
     st.altair_chart(full_cumulated, use_container_width=True)
-    st.altair_chart(c_heatmap_confirmed, use_container_width=True)
+
     st.write("""\n\n""")
     if st.checkbox("y axis independent for each region"):
         y_scale_rs = "independent"
@@ -591,15 +625,9 @@ elif viz_option=="day delta":
     
     st.altair_chart(c_histog_new, use_container_width=True)
 
-    # st.info("""Aquí me gustaría probar los ridgelines. Quizás lo que más me guste es lollypop""")
-
-elif viz_option=="histo":
-    st.info("""En alguna parte podría pintar unas barras rellenas. Total de casos rellenos con el 
-    porcentaje de curados, hospitalizados, UCI, muertos. O barras superpuestas unas sobre otras con
-    transparencia""")
 
 st.info(
-    """ by: [R. Jimenez Sanchez](https://www.linkedin.com/in/robertojimenezsanchez/) | source: [GitHub](https://www.github.com)
+    """ by: [R. Jimenez Sanchez](https://www.linkedin.com/in/robertojimenezsanchez/) | Code: [GitHub](https://www.github.com)
         | data source: [victorvicpal/COVID19_es (GitHub)](https://github.com/victorvicpal/COVID19_es/blob/master/data/final_data/dataCOVID19_es.csv). """
 )
 
