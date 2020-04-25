@@ -2,7 +2,6 @@ from math import ceil
 
 import altair as alt
 from altair import datum
-import streamlit as st
 
 import common_vars as comv
 
@@ -258,22 +257,19 @@ def area_chart_f(df_covid19_region,region_title,x_option,y_vars,stack,solve_y_sc
         ))
 
     # order parameter. Either we do simple ordering or we give a dictionary with custom order
-    if isinstance(order_var,str):
-        st.write("I came the dictionary way")
+    if isinstance(order_var,str):        
         area = area.transform_calculate(
             order=order_var,
         ).encode(
             order= "order:Q"
         )
-    else:
-        st.write("I came this way")
+    else:        
         area = area.encode(
             order = "key:N",
         )
 
     # add a line if requested
-    if y_line_var:
-        st.write("I also came this way")
+    if y_line_var:        
         line_st_3 =(
             base.mark_line()
             .encode(
