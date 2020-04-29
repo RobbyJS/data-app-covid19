@@ -2,22 +2,13 @@
 from math import ceil, floor, log10
 import time
 
-
 import streamlit as st
 import altair as alt
 from altair import datum
 
 import helpers as hp
 import my_alt_graphs as myag 
-
 import common_vars as comv
-#import helpers as hp
-
-
-
-
-
-
 
 #%% Truncate function
 def truncate_10(n,up_down):
@@ -29,20 +20,11 @@ def truncate_10(n,up_down):
 
     return float(round_op(n/10**temp)*(10**temp))
 
-#%% Variables necessary to functions below
-col_name_global = 'Country_total'
-
-
-
-
 
 #%%
-# make title
 
 scope = st.sidebar.selectbox("Scope of Analysis:", ("World","Spain"))
-#scope = "World"
-
-hp.col_name_global = col_name_global
+#scope = "Spain"
 
 with st.spinner('Data is being loaded...'):
     time.sleep(3)
@@ -61,18 +43,10 @@ multiselection = st.sidebar.multiselect(
 )
 
 
-#%% get df_covid19_region based on region in multiselection
-# unit_testing variables
-# multiselection = regions
-# viz_option = "graph"
-# scale = "linear"
-
-# Copy of all regions for the map plot
-# Patch :  remove eventually
-
 y_map_var = "Active Cases"
+
 data_all = (
-    df_covid19_region.loc[df_covid19_region[region_title]!=col_name_global,
+    df_covid19_region.loc[df_covid19_region[region_title]!=comv.col_name_global,
             [region_title,"Lat","Long_",y_map_var,"Date"]].copy())
 data_all["Date_N"] = (
     data_all.groupby(by=region_title)["Date"]
@@ -92,12 +66,8 @@ st.sidebar.info(
     "Thanks to Tlse Data Engineering for the [original project](https://github.com/TlseDataEngineering/data-app-covid19)."
 )
 
-
-
 single_nearest = alt.selection(
     type='multi',fields=[region_title],nearest=True)
-
-
 
 #%%
 if viz_option == "Map":
@@ -115,7 +85,8 @@ if viz_option == "Map":
 elif viz_option == "cumulative":
     st.write(comv.text_4_regions)
     
-    
+    st.write(df_covid19_region)
+
     x_option = st.selectbox("x-axis: ", comv.options_for_x,index=1)   
 
     
@@ -143,17 +114,15 @@ elif viz_option == "cumulative":
     
 
     if scope =='Spain':
-        st.write("""It is possible to add the country total as a line. Select it as `"""+col_name_global+"""`
+        st.write("""It is possible to add the country total as a line. Select it as `"""+comv.col_name_global+"""`
                         in the regions selection in the left 👈""")
 
-    st.write("""You can highlight lines from the graphs below 👇 by holding shift + left click.
-                To remove the selection double click anywhere in the graph.""") 
+    st.write(comv.text_line_instructions) 
    
     
     c_diagnosed = myag.line_base_chart(
         df_covid19_region,region_title,single_nearest,
-        x_option,y_var[0],scale,
-        col_name_global)
+        x_option,y_var[0],scale)
  
     # make plot on nb of deces by regions
     if scale_t == "log":
@@ -161,8 +130,7 @@ elif viz_option == "cumulative":
     
     c_deaths = myag.line_base_chart(
         df_covid19_region,region_title,single_nearest,
-        x_option,y_var[1],scale,
-        col_name_global)
+        x_option,y_var[1],scale)
     
     full_cumulated = alt.vconcat(c_diagnosed, c_deaths)
     
@@ -202,34 +170,35 @@ elif viz_option=="day delta":
        
     x_option = st.selectbox("x-axis: ", comv.options_for_x,index=1)  
     
-    y_var = ["New_cases","New_Deaths"]   
+    y_var = ["New_Cases","New_Deaths"]   
     if st.checkbox("Perform rolling average (5 days period)",value=True):
-        y_var = ["New_Cases_AVG","New_Deaths_AVG"]        
+        y_var = ["New_Cases_AVG","New_Deaths_AVG","New_Recovered_AVG"]        
     else:
-        y_var = ["New_cases","New_Deaths"] 
+        y_var = ["New_Cases","New_Deaths","New_Recovered"] 
 
-   
+    st.write(comv.text_line_instructions) 
+
     scale = alt.Scale(type="linear")
     c_diagnosed_new = myag.line_base_chart(
         df_covid19_region,region_title,single_nearest,
-        x_option,y_var[0],scale,
-        col_name_global)
+        x_option,y_var[0],scale)
     
     # if scale_t == "log":
     #     scale = alt.Scale(type="log")#, domain=[min_log_cases[1], max_log_cases[1]], clamp=True)
     
     c_deaths_new = myag.line_base_chart(
         df_covid19_region,region_title,single_nearest,
-        x_option,y_var[1],scale,
-        col_name_global)
+        x_option,y_var[1],scale)
     
     full_cumulated = alt.vconcat(c_diagnosed_new, c_deaths_new)
 
-
+    
     st.altair_chart(full_cumulated, use_container_width=True)
 
     st.write("""\n\n""")
     st.markdown("---")
+
+    #st.write(df_covid19_region)
 
     solve_y_scale = st.checkbox("y axis independent for each region",value=True)   
 

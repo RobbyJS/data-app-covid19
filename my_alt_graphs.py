@@ -21,7 +21,7 @@ def set_x_axis(x_option):
                     axis=alt.Axis(format="%b-%d",title='Date'))
     return x_var, x_axis
 
-def line_base_chart(df_covid19_region,region_title,single_nearest,x_option,y_var,scale_var,col_name_global):
+def line_base_chart(df_covid19_region,region_title,single_nearest,x_option,y_var,scale_var):
     '''Function for plotting the line graphs in the app. Inputs:
     - x_var: dataframe column to be used for the x-axis
     - y_var: dataframe column to be used for the y-axis
@@ -40,7 +40,7 @@ def line_base_chart(df_covid19_region,region_title,single_nearest,x_option,y_var
         alt.Chart(df_covid19_region)    
         .encode(            
             color=alt.condition(                
-                datum[region_title]==col_name_global,
+                datum[region_title]==comv.col_name_global,
                 alt.value('black'),
                 alt.Color(region_title+":N", scale=alt.Scale(scheme="category20"))),
         #     # opacity = alt.condition(single_nearest, alt.value(1), alt.value(0.2)),
@@ -80,7 +80,7 @@ def line_base_chart(df_covid19_region,region_title,single_nearest,x_option,y_var
         opacity = opacity_common,
         size = alt.condition(~single_nearest, alt.value(2), alt.value(3)),
         # color=alt.condition(                
-        #         datum[region_title]==col_name_global,
+        #         datum[region_title]==comv.col_name_global,
         #         alt.value('black'),
         #         alt.Color(region_title+":N", scale=alt.Scale(scheme="category20"),legend=None)),       
     )#.add_selection(single_nearest).properties(width=600)
@@ -93,8 +93,8 @@ def line_base_chart(df_covid19_region,region_title,single_nearest,x_option,y_var
         size = alt.value(60),
         # color = alt.Color(region_title+":N", scale=alt.Scale(scheme="category20")),
         # color=alt.condition(
-        #         #datum.CCAA==col_name_global,
-        #         datum[region_title]==col_name_global,
+        #         #datum.CCAA==comv.col_name_global,
+        #         datum[region_title]==comv.col_name_global,
         #         alt.value('black'),
         #         alt.Color(region_title+":N", scale=alt.Scale(scheme="category20"))),
         
@@ -109,7 +109,7 @@ def line_base_chart(df_covid19_region,region_title,single_nearest,x_option,y_var
             #color=alt.value('black'),
             opacity = opacity_common,
             # color=alt.condition(                
-            #     datum[region_title]==col_name_global,
+            #     datum[region_title]==comv.col_name_global,
             #     alt.value('black'),
             #     alt.Color(region_title+":N", scale=alt.Scale(scheme="category20"),legend=None)),
     ))
