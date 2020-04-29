@@ -85,7 +85,7 @@ if viz_option == "Map":
 elif viz_option == "cumulative":
     st.write(comv.text_4_regions)
     
-    st.write(df_covid19_region)
+    #st.write(df_covid19_region)
 
     x_option = st.selectbox("x-axis: ", comv.options_for_x,index=1)   
 

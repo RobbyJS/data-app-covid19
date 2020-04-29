@@ -181,14 +181,14 @@ def get_data(which_data='World') :
     # data[['Confirmed','Deaths','Recovered']] = (data[['Confirmed','Deaths','Recovered']]
     #                                             .interpolate(method='spline', order=4,axis=0, limit=None, inplace=False))
 
-    st.write("Data before outlier detection")
-    st.write(data)    
+    #st.write("Data before outlier detection")
+    #st.write(data)    
     data["Confirmed"] = find_outliers(data[[region_title,"Confirmed"]],region_title,"Confirmed",0.75)
     data["Deaths"] = find_outliers(data[[region_title,"Deaths"]],region_title,"Deaths",0.75)
     data["Recovered"] = find_outliers(data[[region_title,"Recovered"]],region_title,"Recovered",0.75)
     
-    st.write("Data before interpolationn")
-    st.write(data)
+    #st.write("Data before interpolationn")
+    #st.write(data)
     # data['Confirmed'] = (data['Confirmed']
     #                                     .interpolate(method='spline', order=4, limit=2, inplace=False,limit_direction='backward'))
 
@@ -205,8 +205,8 @@ def get_data(which_data='World') :
          lambda x: x.interpolate(method='linear', axis=0, limit=2, inplace=False,limit_direction='forward'))         
 
 
-    st.write("Data after interpolation")
-    st.write(data)
+    #st.write("Data after interpolation")
+    #st.write(data)
 
 
     data = data.fillna(value=0)
