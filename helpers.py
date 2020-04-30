@@ -19,6 +19,11 @@ URL_OPENCOVID19 = url_spain_root+"final_data/dataCOVID19_es.csv"
 url_pop_ccaa = url_spain_root+"info_data/Poblaci%C3%B3nCCAA.csv"
 url_ccaa_coords = "https://raw.githubusercontent.com/RobbyJS/data-app-covid19/master/data/CCAA_coords.csv"
 
+url_spain_root = "https://raw.githubusercontent.com/datadista/datasets/master/COVID%2019/"
+url_spain_conf = url_spain_root+"ccaa_covid19_casos_long.csv"
+url_spain_death = url_spain_root+"ccaa_covid19_fallecidos_long.csv"
+url_spain_recov = url_spain_root+"ccaa_covid19_altas_long.csv"
+
 def intern_data_ops(df,value_df):
     """Set of operations that are necessary on the three files containing the international data:
             - Remove unnecessary columns
@@ -39,17 +44,21 @@ def intern_data_ops(df,value_df):
     )
     return df
 
-def compute_days_count(df,region_title,y_col,thresh):
+
+def compute_days_count(df,region_title,y_col,thresh,new_y_col):
     # st.write("""I'm in compute days count""")
     df2 = (
         df.loc[df[y_col] > thresh,[region_title,'Date']]
-        .groupby(by=region_title).min()
-    )
-    df2.rename(columns={'Date':"new_y_col"},inplace=True)
-    df2 = df2.merge(df,on=region_title,how="inner")
-    df2["new_y_col"] = (df2['Date']-df2["new_y_col"]).astype('timedelta64[D]')
-    df2.loc[df2["new_y_col"]<0,"new_y_col"] = nan
-    return df2["new_y_col"]
+        .groupby(by=region_title,as_index=False).min()
+    )    
+    df2.rename(columns={'Date':new_y_col},inplace=True)
+    
+    df = df.merge(df2,on=[region_title],how="inner")
+    df[new_y_col] = (df['Date']-df[new_y_col]).astype('timedelta64[D]')
+    
+    df.loc[df[new_y_col]<0,new_y_col] = nan
+    return df
+
 
 def find_outliers(df,region_title,y_col,thresh):
     # st.write("""I'm in compute days count""")
@@ -151,7 +160,7 @@ def get_data(which_data='World') :
     data.drop(['Date_D'],axis=1,inplace=True)
     
     # Remove duplicate rows (rows with same date):
-    data = data.groupby([region_title,'Date'],as_index=False).max()
+    #data = data.groupby([region_title,'Date'],as_index=False).max()
 
     data = data.sort_values(by=[region_title, "Date"],ignore_index=True)
 
@@ -159,9 +168,14 @@ def get_data(which_data='World') :
 
     # 2. create a new indexes based from days after 5 deaths & 50 confirmed
 
+    # The problem of operating this way is that the data is reordered. To be more efficient...
+    # Maybe I can do with concat keeping indexes: https://pandas.pydata.org/pandas-docs/stable/user_guide/merging.html
 
-    data["days_after_5_deaths"] = compute_days_count(data[[region_title,"Date","Deaths"]],region_title,"Deaths",5)
-    data["days_after_50_confirmed"] = compute_days_count(data[[region_title,"Date","Confirmed"]],region_title,"Confirmed",50)
+    # data["days_after_5_deaths"] = compute_days_count(data[[region_title,"Date","Deaths"]],region_title,"Deaths",5)
+    # data["days_after_50_confirmed"] = compute_days_count(data[[region_title,"Date","Confirmed"]],region_title,"Confirmed",50)
+
+    data = compute_days_count(data,region_title,"Deaths",5,"days_after_5_deaths")
+    data = compute_days_count(data,region_title,"Confirmed",50,"days_after_50_confirmed")
 
     # data["days_after_5_deaths"] = (
     #     data[data.Deaths > 5]
@@ -182,7 +196,8 @@ def get_data(which_data='World') :
     #                                             .interpolate(method='spline', order=4,axis=0, limit=None, inplace=False))
 
     #st.write("Data before outlier detection")
-    #st.write(data)    
+    #st.write(data)
+    # Una de las operaciones me está quitando Ceuta    
     data["Confirmed"] = find_outliers(data[[region_title,"Confirmed"]],region_title,"Confirmed",0.75)
     data["Deaths"] = find_outliers(data[[region_title,"Deaths"]],region_title,"Deaths",0.75)
     data["Recovered"] = find_outliers(data[[region_title,"Recovered"]],region_title,"Recovered",0.75)
@@ -230,6 +245,7 @@ def get_data(which_data='World') :
     
     # Regions to work with and default starting regions
     regions = list(data[region_title].unique())
+    # st.write(regions)
     if which_data=="World":
         df_max_conf = (data[[region_title,"Confirmed"]]
         .groupby(region_title).max()
@@ -244,7 +260,13 @@ def get_data(which_data='World') :
         regions_remove = ['Ceuta','Melilla',comv.col_name_global]
         regions_def = regions.copy()
         for ccaa in regions_remove:
-            regions_def.remove(ccaa)
+            # st.write("Removing "+ccaa)
+            try:
+                regions_def.remove(ccaa)   
+            except ValueError:
+                pass  # do nothing!
+            
+            
     
     return data, region_title,regions, regions_def
 
