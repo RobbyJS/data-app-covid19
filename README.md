@@ -1,6 +1,7 @@
 # DataViz App Covid-19
 > A simple Data App built with [streamlit](https://www.streamlit.io/) to show the evolution of the Covid-19 epidemic in the World or in Spain. <br>
 > All graphs shown on the App have been created with [Altair](https://altair-viz.github.io/). <br>
+
 The App has been deployed in heroku and can be seen here: http://covid-app-spain.herokuapp.com/#
 
 ![](img/myimage.gif)
