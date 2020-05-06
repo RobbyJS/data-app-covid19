@@ -1,7 +1,8 @@
 # DataViz App Covid-19
-> A simple Data App to show the French Covid-19 epidemic
+> A simple Data App built with [streamlit](https://www.streamlit.io/) to show the evolution of the Covid-19 epidemic in the World or in Spain.
+> All graphs shown on the App have been created with [Altair](https://altair-viz.github.io/).
 
-![](img/app.gif)
+![](img/myimage.gif)
 
 
 ## Setup
@@ -10,7 +11,7 @@ OS X & Linux:
 
 ```python
 pip install -r requirements.txt
-streamlit run app.py
+streamlit run app_sp.py
 ```
 
 
