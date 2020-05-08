@@ -186,51 +186,6 @@ def map_chart_f(scope,data_all,y_map_var,region_title,multiselection,regions):
     
     return map_chart
 
-# class AreaChart(alt.Chart):
-#     # or should it be a class?? so i can call method line or not. Let's try with a class
-#     def __init__(self,df_covid19_region,region_title,x_var,y_vars,stack,solve_y_scale):
-#         base = (
-#             alt.Chart(df_covid19_region)
-#             .encode(            
-#                 x=x_var,
-#             ).properties(
-#                 height=150,
-#                 width=180,
-#         ))
-#         area = (
-#             base.mark_area(opacity=0.7,line=True)
-#             .transform_fold(y_vars)
-#             .encode(
-#                 alt.Y('value:Q',stack=stack,axis=alt.Axis(title='count')),
-#                 color=alt.Color('key:N',
-#                         scale=alt.Scale(
-#                             range=['#1f77b4','#e41a1c','#71f594']),
-#                         legend=alt.Legend(title=None)),
-#                 tooltip=[x_var,'value:Q'],
-#             ))
-
-#         if solve_y_scale:
-#             y_scale_rs = "independent"
-#         else:
-#             y_scale_rs = "shared"
-
-#         self = (area.facet(
-#             facet=region_title+':N',
-#             columns=3,
-#             ).resolve_scale(y=y_scale_rs))
-
-#     def order(self,dict):
-#         self.transform_calculate(order=dict).encode(order = "order:Q")
-#     def line(self,y_var,**kwargs):
-#         self.mark_line().encode(
-#             alt.Y("Active Cases:Q",axis=alt.Axis(title='count')),
-#             color=alt.value('black'),
-#             size = alt.value(2),
-#             shape=alt.Shape('Active_cases_label', legend=alt.Legend(title=None))
-#         )
-
-
-
 def area_chart_f(df_covid19_region,region_title,x_option,y_vars,stack,solve_y_scale,order_var,*y_line_var):
 
     x_var, x_axis = set_x_axis(x_option)
@@ -257,9 +212,9 @@ def area_chart_f(df_covid19_region,region_title,x_option,y_vars,stack,solve_y_sc
         ))
 
     # order parameter. Either we do simple ordering or we give a dictionary with custom order
-    if isinstance(order_var,str):        
+    if isinstance(order_var,dict):        
         area = area.transform_calculate(
-            order=order_var,
+            order=order_var.__str__(),
         ).encode(
             order= "order:Q"
         )

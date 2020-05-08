@@ -1,9 +1,11 @@
+#%%
 import pandas as pd
 import streamlit as st
 from numpy import where, nan
 import common_vars as comv
+from pathlib import Path
 
-
+#%%
 ## URLs with all necessary data
 # World data URLs:
 url_intern_root = "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/"
@@ -17,13 +19,16 @@ url_cov_country_codes = url_intern_root+"UID_ISO_FIPS_LookUp_Table.csv"
 url_spain_root = "https://raw.githubusercontent.com/victorvicpal/COVID19_es/master/data/"
 URL_OPENCOVID19 = url_spain_root+"final_data/dataCOVID19_es.csv"
 url_pop_ccaa = url_spain_root+"info_data/Poblaci%C3%B3nCCAA.csv"
+
 url_ccaa_coords = "https://raw.githubusercontent.com/RobbyJS/data-app-covid19/master/data/CCAA_coords.csv"
+url_ccaa_mapping = "https://raw.githubusercontent.com/RobbyJS/data-app-covid19/master/data/CCAA_mapping.csv"
 
 url_spain_root = "https://raw.githubusercontent.com/datadista/datasets/master/COVID%2019/"
 url_spain_conf = url_spain_root+"ccaa_covid19_casos_long.csv"
 url_spain_death = url_spain_root+"ccaa_covid19_fallecidos_long.csv"
 url_spain_recov = url_spain_root+"ccaa_covid19_altas_long.csv"
 
+#%%
 def intern_data_ops(df,value_df):
     """Set of operations that are necessary on the three files containing the international data:
             - Remove unnecessary columns
@@ -43,8 +48,12 @@ def intern_data_ops(df,value_df):
         value_name = value_df
     )
     return df
-
-
+#%%
+def spain_data_ops(df,col_name):
+    df.drop(["cod_ine"],axis=1,inplace=True)
+    df.rename(columns={'total':col_name,'fecha':'Date'},inplace=True)
+    return df
+#%%
 def compute_days_count(df,region_title,y_col,thresh,new_y_col):
     # st.write("""I'm in compute days count""")
     df2 = (
@@ -120,15 +129,25 @@ def get_data(which_data='World') :
     else:
         region_title = "CCAA"
         # 1 - Get COVID data
-        data = pd.read_csv(URL_OPENCOVID19)        
-        data.rename(columns={"muertes":"Deaths","fecha":"Date","curados":"Recovered","casos":"Confirmed"},#,"nuevos":"New_Cases"},
-                    inplace=True)       
-
+        col_names = ["CCAA","Date"]
+        data = spain_data_ops(pd.read_csv(url_spain_conf),"Confirmed")
+        data = data.merge(
+            spain_data_ops(pd.read_csv(url_spain_death),"Deaths"),on=col_names,how='left')
+        data = data.merge(
+            spain_data_ops(pd.read_csv(url_spain_recov),"Recovered"),on=col_names,how='left')
+ 
+        df_mapping = pd.read_csv(url_ccaa_mapping,encoding='ISO-8859-14')
+        df_mapping.set_index(keys="old",inplace=True)   
+        df_mapping2 = pd.Series(df_mapping["new"])     
+        dict_mapping = df_mapping2.to_dict()
+        del df_mapping, df_mapping2
 
         # 2 - Get regions population data
         df_regions = pd.read_csv(url_pop_ccaa)
         df_regions.rename(columns={"Población":"Population"},
-                    inplace=True) 
+                    inplace=True)
+        # Replace CCAA names to match with the ones with COVID data (set first column as index)
+        df_regions.CCAA.replace(to_replace=dict_mapping,value=None,inplace=True)
         # add population information
         data = data.merge(df_regions,on=region_title,how='inner')
 
@@ -147,6 +166,7 @@ def get_data(which_data='World') :
 
         # 5 Add region coordinates for map plot
         df_coords = pd.read_csv(url_ccaa_coords,encoding='ISO-8859-14')
+        df_coords.CCAA.replace(to_replace=dict_mapping,value=None,inplace=True)
         data = data.merge(df_coords,how="left")
         
     
@@ -198,9 +218,9 @@ def get_data(which_data='World') :
     #st.write("Data before outlier detection")
     #st.write(data)
     # Una de las operaciones me está quitando Ceuta    
-    data["Confirmed"] = find_outliers(data[[region_title,"Confirmed"]],region_title,"Confirmed",0.75)
-    data["Deaths"] = find_outliers(data[[region_title,"Deaths"]],region_title,"Deaths",0.75)
-    data["Recovered"] = find_outliers(data[[region_title,"Recovered"]],region_title,"Recovered",0.75)
+    # data["Confirmed"] = find_outliers(data[[region_title,"Confirmed"]],region_title,"Confirmed",0.75)
+    # data["Deaths"] = find_outliers(data[[region_title,"Deaths"]],region_title,"Deaths",0.75)
+    # data["Recovered"] = find_outliers(data[[region_title,"Recovered"]],region_title,"Recovered",0.75)
     
     #st.write("Data before interpolationn")
     #st.write(data)
@@ -271,3 +291,5 @@ def get_data(which_data='World') :
     return data, region_title,regions, regions_def
 
 
+def read_markdown_file(markdown_file):
+    return Path(markdown_file).read_text()

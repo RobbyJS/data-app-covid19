@@ -153,7 +153,7 @@ elif viz_option == "cumulative":
 
 
     y_var_area = ['Deaths','Recovered','Active Cases']
-    order_var = "{'Deaths': 0, 'Recovered': 1, 'Active Cases': 2}"
+    order_var = {'Deaths': 0, 'Recovered': 1, 'Active Cases': 2}
 
     area_st_d_2 = myag.area_chart_f(
         df_covid19_region,region_title,x_option,y_var_area,
@@ -170,11 +170,15 @@ elif viz_option=="day delta":
        
     x_option = st.selectbox("x-axis: ", comv.options_for_x,index=1)  
     
-    y_var = ["New_Cases","New_Deaths"]   
+    # y_var = ["New_Cases","New_Deaths"]   
     if st.checkbox("Perform rolling average (5 days period)",value=True):
         y_var = ["New_Cases_AVG","New_Deaths_AVG","New_Recovered_AVG"]        
     else:
         y_var = ["New_Cases","New_Deaths","New_Recovered"] 
+
+    order_list = [0,2,1]
+    order_dict = {}
+    for i,elem in enumerate(order_list): order_dict[elem] = y_var[i]
 
     st.write(comv.text_line_instructions) 
 
@@ -206,10 +210,14 @@ elif viz_option=="day delta":
 
     st.altair_chart(area_st_d, use_container_width=True)
 
+st.markdown("---")
 
+data_srcs_markdown = hp.read_markdown_file("data_sources.md")
+st.markdown(data_srcs_markdown, unsafe_allow_html=True)
+
+st.write("\n\n")
 st.info(
-    """ by: [R. Jimenez Sanchez](https://www.linkedin.com/in/robertojimenezsanchez/) | Code: [GitHub](https://www.github.com)
-        | data source: [victorvicpal/COVID19_es (GitHub)](https://github.com/victorvicpal/COVID19_es/blob/master/data/final_data/dataCOVID19_es.csv). """
+    """ by: [R. Jimenez Sanchez](https://www.linkedin.com/in/robertojimenezsanchez/) | Code: [GitHub](https://github.com/RobbyJS/data-app-covid19)"""
 )
 
 
